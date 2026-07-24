@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+
+# Variables privadas
+.env
+
+# Archivos generados
+audio/
+videos/
+images/
+storage/
+scripts/
+
+# Archivos temporales
+*.tmp
+*.log
