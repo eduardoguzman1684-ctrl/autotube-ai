@@ -1,4 +1,5 @@
 import os
+from PIL import Image, ImageDraw, ImageFont
 
 
 def prepare_image_folder():
@@ -19,31 +20,33 @@ def create_scene_images(scenes):
 
     for scene in scenes:
 
-        filename = f"images/escena_{scene['escena']}.txt"
+        filename = f"images/escena_{scene['escena']}.png"
 
-        with open(filename, "w", encoding="utf-8") as file:
-            file.write(
-                "Imagen preparada para:\n"
-                + scene["titulo"]
-                + "\n\n"
-                + scene["descripcion"]
-            )
+        img = Image.new(
+            "RGB",
+            (1280, 720),
+            color=(20, 20, 30)
+        )
+
+        draw = ImageDraw.Draw(img)
+
+        texto = (
+            scene["titulo"]
+            + "\n\n"
+            + scene["descripcion"]
+        )
+
+        draw.multiline_text(
+            (80, 200),
+            texto,
+            fill=(255,255,255),
+            spacing=10
+        )
+
+        img.save(filename)
 
         images.append(filename)
 
-        print(f"🖼️ Imagen preparada: {filename}")
+        print(f"🖼️ Imagen creada: {filename}")
 
     return images
-
-
-if __name__ == "__main__":
-
-    prueba = [
-        {
-            "escena": 1,
-            "titulo": "Introducción",
-            "descripcion": "Tecnología e inteligencia artificial"
-        }
-    ]
-
-    create_scene_images(prueba)
