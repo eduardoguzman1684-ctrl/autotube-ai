@@ -1,17 +1,44 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Entorno virtual
+venv/
+env/
+.venv/
 
 # Variables privadas
 .env
 
-# Archivos generados
+# Archivos generados por AutoTube AI
 audio/
 videos/
 images/
 storage/
+
+# Guiones generados
 scripts/
+storage/scripts/
+storage/scenes/
+
+# Modelos grandes de IA (no subir a GitHub)
+models/*.onnx
+models/*.onnx.json
 
 # Archivos temporales
 *.tmp
 *.log
+
+# Pruebas locales
+prueba.wav
+test_*.py
+
+# Configuración del sistema
+.vscode/
+.idea/
+
+# Archivos de Windows
+Thumbs.db
+Desktop.ini
