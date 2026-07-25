@@ -1,26 +1,28 @@
+from ai.ollama_client import OllamaClient
+
+
 def generate_script(topic):
 
-    script = f"""
-=================================
-GUION GENERADO POR AUTOTUBE AI
-=================================
+    ai = OllamaClient()
 
-TÍTULO:
+    prompt = f"""
+Eres un guionista profesional de YouTube.
+
+Escribe un guion sobre:
+
 {topic}
 
-INTRODUCCIÓN:
-Bienvenidos a AutoTube AI.
-En este video conoceremos información interesante sobre {topic}.
+Debe incluir:
 
-DESARROLLO:
-Hoy analizaremos los aspectos más importantes relacionados con {topic}.
-Este contenido fue creado automáticamente utilizando inteligencia artificial.
+1. Título atractivo.
+2. Introducción.
+3. Tres secciones de desarrollo.
+4. Una conclusión.
+5. Una llamada a la acción.
 
-CONCLUSIÓN:
-Gracias por ver este video.
-Suscríbete para más contenido generado con AutoTube AI.
+Escribe todo en español.
 
-=================================
+Máximo 300 palabras.
 """
 
-    return script
+    return ai.generate(prompt)

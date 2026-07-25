@@ -13,65 +13,49 @@ class VideoPipeline:
     def run(self, topic):
 
         print("\n📝 Generando guion...\n")
+        print("DEBUG A")
 
         script = generate_script(topic)
+
+        print("DEBUG B")
 
         with open("storage/scripts/guion.txt", "w", encoding="utf-8") as file:
             file.write(script)
 
+        print("DEBUG C")
         print("✅ Guion creado")
 
-
         print("\n🎙️ Generando voz...")
+        print("DEBUG D")
 
         audio = create_voice(script)
 
+        print("DEBUG E")
         print(f"✅ Voz creada: {audio}")
 
-
         print("\n🎬 Generando escenas...")
-
         scenes = generate_scenes(topic)
 
-        with open("storage/scenes/escenas.txt", "w", encoding="utf-8") as file:
-            for scene in scenes:
-                file.write(str(scene))
-                file.write("\n\n")
-
-        print("✅ Escenas creadas")
-
+        print("DEBUG F")
 
         print("\n🎞️ Creando animaciones...")
-
         animations = create_animation_sequence(scenes)
 
-        with open("storage/scenes/animations.txt", "w", encoding="utf-8") as file:
-            for animation in animations:
-                file.write(str(animation))
-                file.write("\n\n")
-
-        print("✅ Animaciones creadas")
-
+        print("DEBUG G")
 
         print("\n🖼️ Preparando imágenes...")
-
         images = create_scene_images(scenes)
 
-        print(f"✅ {len(images)} imágenes preparadas")
-
+        print("DEBUG H")
 
         print("\n📝 Generando subtítulos...")
-
         subtitles = generate_subtitles(script)
 
-        print(f"✅ {len(subtitles)} subtítulos creados")
-
+        print("DEBUG I")
 
         print("\n🎬 Creando video...")
-
         video = create_video()
 
-        print(f"✅ Video creado: {video}")
-
+        print("DEBUG J")
 
         return video
