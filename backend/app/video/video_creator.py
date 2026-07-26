@@ -1,58 +1,66 @@
-from moviepy import AudioFileClip, ImageClip, concatenate_videoclips
 import os
+from moviepy import ImageClip, AudioFileClip, concatenate_videoclips
 
 
 def create_video():
 
-    print("🎬 Construyendo video por escenas...")
+    print("🎬 Construyendo video cinematográfico...")
 
-    audio = AudioFileClip("audio/voz.mp3")
+    image_folder = "images"
 
-    escenas = []
+    # ← ESTA ES LA LÍNEA CORRECTA
+    audio_file = "audio/audio_final.mp3"
 
-    imagenes = [
-        "images/escena_1.txt",
-        "images/escena_2.txt",
-        "images/escena_3.txt",
-        "images/escena_4.txt"
+    output = "videos/autotube_video.mp4"
+
+    os.makedirs("videos", exist_ok=True)
+
+    images = [
+        "images/escena_1.jpg",
+        "images/escena_2.jpg",
+        "images/escena_3.jpg",
+        "images/escena_4.jpg"
     ]
 
+    clips = []
 
-    duracion = audio.duration / len(imagenes)
+    for img in images:
 
+        print(f"🎥 Procesando: {img}")
 
-    for imagen in imagenes:
-
-        # Por ahora usamos fondo.jpg como imagen visual
-        # hasta activar generación de imágenes IA
-
-        clip = ImageClip(
-            "config/fondo.jpg"
+        clip = (
+            ImageClip(img)
+            .resized(width=1080)
+            .with_duration(5)
         )
 
-        clip = clip.with_duration(duracion)
+        clip = clip.resized(new_size=(1080, 720))
 
-        # efecto zoom
-        clip = clip.resized(
-            lambda t: 1 + (0.03 * t)
-        )
-
-        escenas.append(clip)
-
+        clips.append(clip)
 
     video = concatenate_videoclips(
-        escenas,
+        clips,
         method="compose"
     )
 
+    print("🎙️ Agregando voz...")
 
-    video = video.with_audio(audio)
+    if os.path.exists(audio_file):
 
+        audio = AudioFileClip(audio_file)
+
+        video = video.with_audio(audio)
+
+    print("🎬 Exportando video compatible...")
 
     video.write_videofile(
-        "videos/autotube_video.mp4",
-        fps=24
+        output,
+        fps=24,
+        codec="libx264",
+        audio_codec="aac",
+        ffmpeg_params=["-pix_fmt", "yuv420p"]
     )
 
+    print("✅ Video creado:", output)
 
-    return "videos/autotube_video.mp4"
+    return output

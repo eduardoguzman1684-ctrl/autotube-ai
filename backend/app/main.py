@@ -1,5 +1,5 @@
-
 from pipeline.video_pipeline import VideoPipeline
+from ai.gemini_generator import generar_con_gemini
 
 
 def main():
@@ -8,6 +8,14 @@ def main():
     print("------------------------")
 
     topic = input("Escribe el tema del video: ")
+
+    print("\n🧠 Gemini creando contenido...")
+    
+    contenido = generar_con_gemini(topic)
+
+    print("\n✅ Contenido generado por Gemini:")
+    print("-------------------------------")
+    print(contenido[:1000])
 
     pipeline = VideoPipeline()
 

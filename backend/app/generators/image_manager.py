@@ -1,15 +1,22 @@
 import os
-from PIL import Image, ImageDraw, ImageFont
+import requests
+from PIL import Image
+from io import BytesIO
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
+
+API_KEY = os.getenv("PIXABAY_API_KEY")
+
 
 
 def prepare_image_folder():
 
-    folder = "images"
+    if not os.path.exists("images"):
+        os.makedirs("images")
 
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-
-    print("📁 Carpeta de imágenes preparada")
 
 
 def create_scene_images(scenes):
@@ -18,35 +25,121 @@ def create_scene_images(scenes):
 
     images = []
 
+
     for scene in scenes:
 
-        filename = f"images/escena_{scene['escena']}.png"
+        filename = f"images/escena_{scene['escena']}.jpg"
 
-        img = Image.new(
-            "RGB",
-            (1280, 720),
-            color=(20, 20, 30)
-        )
 
-        draw = ImageDraw.Draw(img)
+        print("\n🖼️ Buscando imagen para escena:")
+        print(scene["titulo"])
 
-        texto = (
-            scene["titulo"]
-            + "\n\n"
-            + scene["descripcion"]
-        )
 
-        draw.multiline_text(
-            (80, 200),
-            texto,
-            fill=(255,255,255),
-            spacing=10
-        )
 
-        img.save(filename)
+        palabras = scene["descripcion"][:100]
 
-        images.append(filename)
 
-        print(f"🖼️ Imagen creada: {filename}")
+
+        params = {
+
+            "key": API_KEY,
+
+            "q": palabras,
+
+            "image_type": "photo",
+
+            "orientation": "horizontal",
+
+            "per_page": 5
+
+        }
+
+
+
+        try:
+
+            response = requests.get(
+
+                "https://pixabay.com/api/",
+
+                params=params,
+
+                timeout=30
+
+            )
+
+
+            data = response.json()
+
+
+
+            if len(data["hits"]) == 0:
+
+                print("❌ No hay imágenes")
+
+                continue
+
+
+
+            image_url = data["hits"][0]["largeImageURL"]
+
+
+
+            img_data = requests.get(
+
+                image_url,
+
+                timeout=30
+
+            ).content
+
+
+
+            img = Image.open(
+
+                BytesIO(img_data)
+
+            )
+
+
+            img = img.convert("RGB")
+
+
+            img.save(
+
+                filename,
+
+                "JPEG",
+
+                quality=95
+
+            )
+
+
+
+            images.append(filename)
+
+
+            print(
+
+                "✅ Imagen creada:",
+
+                filename
+
+            )
+
+
+
+        except Exception as e:
+
+            print(
+
+                "❌ Error:",
+
+                e
+
+            )
+
+
 
     return images
