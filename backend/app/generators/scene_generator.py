@@ -1,171 +1,168 @@
-from ai.ollama_client import OllamaClient
-import json
+import logging
 
 
-def generate_scenes(topic):
-
-    print("🧠 Generando escenas inteligentes...")
-
-
-    prompt = f"""
-Eres un director cinematográfico profesional de YouTube.
-
-Crea 4 escenas visuales para un video sobre:
-
-{topic}
+# =====================================
+# AUTOTUBE AI v2.0
+# GENERADOR DE ESCENAS
+# =====================================
 
 
-Reglas importantes:
-
-- La descripción debe ser TEXTO PLANO.
-- NO uses JSON dentro de descripcion.
-- NO uses campos como video, imagen o textura.
-- NO menciones inteligencia artificial, oficinas o tecnología si el tema no trata de eso.
-- Las escenas deben estar relacionadas directamente con el tema.
-
-
-Cada escena debe tener:
-
-- escena
-- titulo
-- descripcion
-
-
-Ejemplos:
-
-Historia:
-Lugares antiguos, personajes históricos, ciudades antiguas, vestimenta de época.
-
-Religión:
-Templos, lugares históricos, personajes relacionados, ambientes de la época.
-
-Ciencia:
-Laboratorios, naturaleza, experimentos, descubrimientos.
-
-Biografía:
-Persona, momentos importantes de su vida, lugares relacionados.
-
-
-Devuelve solamente JSON.
-
-
-Formato obligatorio:
-
-[
- {{
- "escena":1,
- "titulo":"Introducción",
- "descripcion":"Descripción cinematográfica detallada relacionada con el tema."
- }},
- {{
- "escena":2,
- "titulo":"Desarrollo",
- "descripcion":"Descripción cinematográfica detallada relacionada con el tema."
- }},
- {{
- "escena":3,
- "titulo":"Momentos importantes",
- "descripcion":"Descripción cinematográfica detallada relacionada con el tema."
- }},
- {{
- "escena":4,
- "titulo":"Conclusión",
- "descripcion":"Descripción cinematográfica detallada relacionada con el tema."
- }}
-]
-
-
-No agregues explicaciones fuera del JSON.
-"""
-
-
-    ai = OllamaClient()
-
-    respuesta = ai.generate(prompt)
-
-
-    try:
-
-        respuesta = respuesta.replace("```json", "")
-        respuesta = respuesta.replace("```", "")
-
-        scenes = json.loads(respuesta)
-
-
-    except Exception:
-
-        print("⚠️ Error leyendo escenas IA, usando modo seguro")
-
-
-        scenes = [
-
-            {
-                "escena":1,
-                "titulo":"Introducción",
-                "descripcion":f"""
-                Escena cinematográfica sobre {topic}.
-                Ambiente relacionado con la época y cultura del tema.
-                Fotografía profesional estilo documental 4K.
-                """
-            },
-
-
-            {
-                "escena":2,
-                "titulo":"Desarrollo",
-                "descripcion":f"""
-                Representación visual de los acontecimientos principales de {topic}.
-                Escenario realista con detalles históricos y cinematográficos.
-                """
-            },
-
-
-            {
-                "escena":3,
-                "titulo":"Momentos importantes",
-                "descripcion":f"""
-                Escena mostrando los momentos más relevantes relacionados con {topic}.
-                Imagen realista con iluminación de película.
-                """
-            },
-
-
-            {
-                "escena":4,
-                "titulo":"Conclusión",
-                "descripcion":f"""
-                Imagen final inspiradora relacionada con {topic}.
-                Estilo documental cinematográfico profesional.
-                """
-            }
-
-        ]
-
-
-    # Protección contra respuestas incorrectas de la IA
-    for scene in scenes:
-
-        descripcion = scene.get("descripcion")
-
-
-        # Si Ollama devuelve un objeto en vez de texto
-        if isinstance(descripcion, dict):
-
-            texto = ""
-
-            for valor in descripcion.values():
-                texto += str(valor) + ". "
-
-            scene["descripcion"] = texto.strip()
+logger = logging.getLogger(
+    "AutoTubeAI"
+)
 
 
 
-        # Si viene vacío
-        if not scene.get("descripcion"):
+def generar_escenas(
+    guion
+):
 
-            scene["descripcion"] = (
-                f"Escena cinematográfica relacionada con {topic}"
-            )
+    logger.info(
+        "🎬 Generando escenas documentales"
+    )
 
 
-    return scenes
+    escenas = []
+
+
+    # ESCENA 1 - INTRODUCCIÓN
+
+    escenas.append({
+
+        "numero": 1,
+
+        "titulo":
+        "Introducción",
+
+        "imagen_prompt":
+        (
+            f"Escena cinematográfica histórica "
+            f"sobre {guion['titulo']}, "
+            "paisaje antiguo, iluminación "
+            "dramática, estilo documental."
+        ),
+
+        "narracion":
+        guion["introduccion"]
+
+    })
+
+
+    # ESCENA 2 - DESARROLLO
+
+    escenas.append({
+
+        "numero": 2,
+
+        "titulo":
+        "Desarrollo histórico",
+
+        "imagen_prompt":
+        (
+            "Civilización antigua, "
+            "personajes históricos, "
+            "arquitectura antigua, "
+            "estilo documental cinematográfico."
+        ),
+
+        "narracion":
+        guion["desarrollo"][0]
+
+    })
+
+
+    # ESCENA 3 - CONCLUSIÓN
+
+    escenas.append({
+
+        "numero": 3,
+
+        "titulo":
+        "Conclusión",
+
+        "imagen_prompt":
+        (
+            "Ruinas arqueológicas antiguas "
+            "al atardecer, misterio histórico, "
+            "estilo película documental."
+        ),
+
+        "narracion":
+        guion["conclusion"]
+
+    })
+
+
+    return escenas
+
+
+
+def mostrar_escenas(
+    escenas
+):
+
+    print()
+
+    print("=" * 50)
+    print("🎬 ESCENAS GENERADAS")
+    print("=" * 50)
+
+
+    for escena in escenas:
+
+        print()
+
+        print(
+            f"🎞️ ESCENA {escena['numero']}"
+        )
+
+        print(
+            "Título:",
+            escena["titulo"]
+        )
+
+        print(
+            "Imagen:",
+            escena["imagen_prompt"]
+        )
+
+        print(
+            "Narración:",
+            escena["narracion"]
+        )
+
+
+
+if __name__ == "__main__":
+
+
+    guion_prueba = {
+
+        "titulo":
+        "El Imperio Hitita",
+
+
+        "introduccion":
+        "Una antigua civilización llena de misterios.",
+
+
+        "desarrollo":
+        [
+            "Origen y expansión del imperio."
+        ],
+
+
+        "conclusion":
+        "Su legado continúa hasta nuestros días."
+
+    }
+
+
+    resultado = generar_escenas(
+        guion_prueba
+    )
+
+
+    mostrar_escenas(
+        resultado
+    )

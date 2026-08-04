@@ -1,22 +1,36 @@
 import os
 import requests
+from urllib.parse import quote
 from PIL import Image
 from io import BytesIO
-from dotenv import load_dotenv
 
-
-load_dotenv()
-
-
-API_KEY = os.getenv("PIXABAY_API_KEY")
-
+print("######## IMAGE_MANAGER CARGADO ########")
 
 
 def prepare_image_folder():
+    os.makedirs("images", exist_ok=True)
 
-    if not os.path.exists("images"):
-        os.makedirs("images")
 
+def generar_imagen_pollinations(prompt, filename):
+
+    print("\n🎨 Generando imagen con Pollinations AI...")
+    print(prompt)
+
+    url = (
+        "https://image.pollinations.ai/prompt/"
+        + quote(prompt)
+        + "?width=1280&height=720&model=flux&enhance=true&nologo=true"
+    )
+
+    response = requests.get(url, timeout=180)
+
+    if response.status_code != 200:
+        raise Exception(f"Pollinations respondió {response.status_code}")
+
+    img = Image.open(BytesIO(response.content))
+    img.convert("RGB").save(filename, "JPEG", quality=95)
+
+    print("✅ Imagen creada:", filename)
 
 
 def create_scene_images(scenes):
@@ -25,121 +39,20 @@ def create_scene_images(scenes):
 
     images = []
 
-
     for scene in scenes:
 
         filename = f"images/escena_{scene['escena']}.jpg"
 
+        prompt = scene.get("image_prompt")
 
-        print("\n🖼️ Buscando imagen para escena:")
-        print(scene["titulo"])
+        if not prompt:
+            prompt = scene["descripcion"]
 
+        generar_imagen_pollinations(
+            prompt,
+            filename
+        )
 
-
-        palabras = scene["descripcion"][:100]
-
-
-
-        params = {
-
-            "key": API_KEY,
-
-            "q": palabras,
-
-            "image_type": "photo",
-
-            "orientation": "horizontal",
-
-            "per_page": 5
-
-        }
-
-
-
-        try:
-
-            response = requests.get(
-
-                "https://pixabay.com/api/",
-
-                params=params,
-
-                timeout=30
-
-            )
-
-
-            data = response.json()
-
-
-
-            if len(data["hits"]) == 0:
-
-                print("❌ No hay imágenes")
-
-                continue
-
-
-
-            image_url = data["hits"][0]["largeImageURL"]
-
-
-
-            img_data = requests.get(
-
-                image_url,
-
-                timeout=30
-
-            ).content
-
-
-
-            img = Image.open(
-
-                BytesIO(img_data)
-
-            )
-
-
-            img = img.convert("RGB")
-
-
-            img.save(
-
-                filename,
-
-                "JPEG",
-
-                quality=95
-
-            )
-
-
-
-            images.append(filename)
-
-
-            print(
-
-                "✅ Imagen creada:",
-
-                filename
-
-            )
-
-
-
-        except Exception as e:
-
-            print(
-
-                "❌ Error:",
-
-                e
-
-            )
-
-
+        images.append(filename)
 
     return images

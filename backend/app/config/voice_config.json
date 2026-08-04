@@ -1,0 +1,9 @@
+{
+    "engine": "xtts",
+    "default_voice": "female_documentary",
+    "language": "es",
+    "speed": 1.0,
+    "temperature": 0.65,
+    "top_p": 0.85,
+    "repetition_penalty": 5.0
+}

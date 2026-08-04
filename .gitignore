@@ -42,3 +42,61 @@ test_*.py
 # Archivos de Windows
 Thumbs.db
 Desktop.ini
+# ============================================================
+# AUTOTUBE AI - ARCHIVOS PRIVADOS Y LOCALES
+# ============================================================
+
+# Entornos virtuales
+xtts_env/
+venv/
+env/
+.venv/
+
+# Credenciales Google / YouTube
+client_secret.json
+token.pickle
+**/client_secret.json
+**/token.pickle
+
+# Claves y secretos
+*.key
+*.pem
+secrets/
+credentials/
+
+# Backups locales del proyecto
+backend_backup/
+*_backup/
+*.bak
+
+# Archivos de prueba de audio
+*.wav
+
+
+# ============================================================
+# CACHES GENERADAS POR LA APLICACION
+# ============================================================
+
+backend/app/cache/
+backend/app/trends/cache/
+backend/app/v2/trends/cache/
+
+# Caches Python
+**/__pycache__/
+*.py[cod]
+
+# Archivos temporales de procesamiento
+*.json.tmp
+*.cache
+
+# Carpetas generadas por config.py
+cache/
+logs/
+
+# Archivos Python de respaldo
+*_backup.py
+*_antes_*.py
+
+# Archivos temporales de desarrollo
+*.bak
+*.old

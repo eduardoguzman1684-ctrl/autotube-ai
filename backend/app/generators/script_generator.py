@@ -1,28 +1,136 @@
-from ai.ollama_client import OllamaClient
+import logging
 
 
-def generate_script(topic):
+# =====================================
+# AUTOTUBE AI v2.0
+# GENERADOR DE GUION DOCUMENTAL
+# =====================================
 
-    ai = OllamaClient()
 
-    prompt = f"""
-Eres un guionista profesional de YouTube.
+logger = logging.getLogger(
+    "AutoTubeAI"
+)
 
-Escribe un guion sobre:
 
-{topic}
 
-Debe incluir:
+def generar_guion(
+    documental
+):
 
-1. Título atractivo.
-2. Introducción.
-3. Tres secciones de desarrollo.
-4. Una conclusión.
-5. Una llamada a la acción.
+    titulo = documental["titulo"]
 
-Escribe todo en español.
 
-Máximo 300 palabras.
-"""
+    logger.info(
+        f"📝 Generando guion: {titulo}"
+    )
 
-    return ai.generate(prompt)
+
+    guion = {
+
+        "titulo": titulo,
+
+
+        "introduccion": (
+            f"Durante siglos, {titulo} "
+            "ha despertado curiosidad "
+            "por sus secretos, historia "
+            "y acontecimientos."
+        ),
+
+
+        "desarrollo": [
+
+            (
+                "Origen y contexto histórico "
+                "del tema."
+            ),
+
+            (
+                "Personajes importantes "
+                "y acontecimientos principales."
+            ),
+
+            (
+                "Misterios, descubrimientos "
+                "y datos sorprendentes."
+            )
+
+        ],
+
+
+        "conclusion": (
+            f"La historia de {titulo} "
+            "nos demuestra que el pasado "
+            "todavía tiene muchos secretos "
+            "por descubrir."
+        )
+
+    }
+
+
+    return guion
+
+
+
+def imprimir_guion(
+    guion
+):
+
+    print()
+    print("=" * 50)
+    print("📝 GUION DOCUMENTAL")
+    print("=" * 50)
+
+
+    print()
+    print("🎬 TÍTULO:")
+    print(
+        guion["titulo"]
+    )
+
+
+    print()
+    print("🎙️ INTRODUCCIÓN:")
+    print(
+        guion["introduccion"]
+    )
+
+
+    print()
+    print("📚 DESARROLLO:")
+
+    for punto in guion["desarrollo"]:
+
+        print(
+            "•",
+            punto
+        )
+
+
+    print()
+    print("🏁 CONCLUSIÓN:")
+    print(
+        guion["conclusion"]
+    )
+
+
+
+if __name__ == "__main__":
+
+
+    prueba = {
+
+        "titulo":
+        "El Imperio Hitita"
+
+    }
+
+
+    resultado = generar_guion(
+        prueba
+    )
+
+
+    imprimir_guion(
+        resultado
+    )

@@ -1,36 +1,152 @@
-from dotenv import load_dotenv
-from openai import OpenAI
 import os
+import logging
+from datetime import datetime
 
 
-load_dotenv()
+# =====================================
+# AUTOTUBE AI v2.0
+# GENERADOR DE IMÁGENES
+# =====================================
 
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
+
+logger = logging.getLogger(
+    "AutoTubeAI"
 )
 
 
-def generate_image(prompt, filename):
 
-    print("🖼️ Generando imagen...")
+OUTPUT_DIR = "images/generated"
 
-    result = client.images.generate(
-        model="gpt-image-1",
-        prompt=prompt,
-        size="1024x1024"
+
+
+def preparar_directorio():
+
+    os.makedirs(
+        OUTPUT_DIR,
+        exist_ok=True
     )
 
-    image_url = result.data[0].url
 
-    print("✅ Imagen generada:")
-    print(image_url)
 
-    return image_url
+def generar_imagenes(
+    escenas
+):
+
+    preparar_directorio()
+
+
+    logger.info(
+        "🎨 Preparando imágenes documentales"
+    )
+
+
+    imagenes = []
+
+
+    for escena in escenas:
+
+
+        numero = escena["numero"]
+
+
+        nombre = (
+            f"{OUTPUT_DIR}/"
+            f"escena_{numero}.txt"
+        )
+
+
+        with open(
+            nombre,
+            "w",
+            encoding="utf-8"
+        ) as archivo:
+
+
+            archivo.write(
+                "PROMPT DE IMAGEN IA\n\n"
+            )
+
+
+            archivo.write(
+                escena["imagen_prompt"]
+            )
+
+
+            archivo.write(
+                "\n\nCreado:"
+            )
+
+
+            archivo.write(
+                str(datetime.now())
+            )
+
+
+
+        imagenes.append(
+            nombre
+        )
+
+
+        print(
+            f"✅ Preparada escena {numero}: {nombre}"
+        )
+
+
+
+    return imagenes
+
 
 
 if __name__ == "__main__":
 
-    generate_image(
-        "Una oficina moderna usando inteligencia artificial en los negocios, estilo cinematográfico, personas trabajando con tecnología avanzada",
-        "imagen1.png"
+
+    escenas_prueba = [
+
+
+        {
+
+            "numero":1,
+
+            "imagen_prompt":
+            (
+                "Antigua ciudad hitita "
+                "con estilo documental "
+                "cinematográfico"
+            )
+
+        },
+
+
+        {
+
+            "numero":2,
+
+            "imagen_prompt":
+            (
+                "Guerreros hititas "
+                "en una batalla antigua"
+            )
+
+        },
+
+
+        {
+
+            "numero":3,
+
+            "imagen_prompt":
+            (
+                "Ruinas arqueológicas "
+                "al atardecer"
+            )
+
+        }
+
+    ]
+
+
+
+    generar_imagenes(
+        escenas_prueba
     )

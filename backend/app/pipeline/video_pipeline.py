@@ -64,4 +64,7 @@ class VideoPipeline:
 
         print("DEBUG J")
 
-        return video
+        return {
+            "video": video,
+            "script": script
+        }
