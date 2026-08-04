@@ -100,3 +100,8 @@ logs/
 # Archivos temporales de desarrollo
 *.bak
 *.old
+
+# Backups locales Python
+*_backup.py
+*_backup*.py
+*_antes_*.py
