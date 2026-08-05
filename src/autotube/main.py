@@ -20,6 +20,10 @@ from autotube.visuals.local_asset_generator import (
     GeneradorRecursosLocales,
     cargar_manifiesto_assets,
 )
+from autotube.video.composer import (
+    CompositorVideo,
+    cargar_contexto_render,
+)
 from autotube.content.ideas_generator import (
     NICHO_PREDETERMINADO,
     GeneradorIdeas,
@@ -236,6 +240,45 @@ def crear_parser() -> argparse.ArgumentParser:
         "--forzar",
         action="store_true",
         help="Vuelve a generar recursos locales existentes.",
+    )
+
+    render_parser = subcomandos.add_parser(
+        "render",
+        help="Combina los recursos visuales con la narración.",
+    )
+
+    render_parser.add_argument(
+        "--assets",
+        default=None,
+        help="Manifiesto de recursos. Usa el más reciente por defecto.",
+    )
+
+    render_parser.add_argument(
+        "--audio",
+        default=None,
+        help="Manifiesto de audio. Usa el más reciente por defecto.",
+    )
+
+    render_parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Genera una vista previa rápida en 1280x720.",
+    )
+
+    render_parser.add_argument(
+        "--limite-clips",
+        type=int,
+        default=None,
+        help=(
+            "Número de clips a procesar. "
+            "La vista previa usa 8 por defecto."
+        ),
+    )
+
+    render_parser.add_argument(
+        "--conservar-temporales",
+        action="store_true",
+        help="Conserva los clips intermedios del render.",
     )
 
     return parser
@@ -730,6 +773,86 @@ def generar_recursos_locales(argumentos: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def renderizar_video(argumentos: argparse.Namespace) -> None:
+    """Renderiza una vista previa o el video completo."""
+    settings = load_settings()
+
+    archivo_assets = (
+        Path(argumentos.assets)
+        if argumentos.assets
+        else None
+    )
+
+    archivo_audio = (
+        Path(argumentos.audio)
+        if argumentos.audio
+        else None
+    )
+
+    (
+        assets,
+        audio,
+        ruta_assets,
+        ruta_audio_manifest,
+        ruta_audio,
+    ) = cargar_contexto_render(
+        output_dir=settings.output_dir,
+        archivo_assets=archivo_assets,
+        archivo_audio=archivo_audio,
+    )
+
+    cantidad_total = len(
+        assets.get("elementos", [])
+    )
+
+    print("\nCOMPOSITOR DE VIDEO")
+    print("=" * 72)
+    print(f"Recursos: {ruta_assets}")
+    print(f"Audio: {ruta_audio}")
+    print(f"Recursos disponibles: {cantidad_total}/{cantidad_total}")
+    print(
+        f"Modo: "
+        f"{'vista previa' if argumentos.preview else 'video completo'}"
+    )
+    print("=" * 72)
+
+    compositor = CompositorVideo(
+        output_dir=settings.output_dir,
+    )
+
+    resultado = compositor.renderizar(
+        assets=assets,
+        audio_manifest=audio,
+        ruta_assets=ruta_assets,
+        ruta_audio_manifest=ruta_audio_manifest,
+        ruta_audio=ruta_audio,
+        preview=argumentos.preview,
+        limite_clips=argumentos.limite_clips,
+        conservar_temporales=argumentos.conservar_temporales,
+    )
+
+    minutos = int(
+        resultado["duracion"] // 60
+    )
+
+    segundos = round(
+        resultado["duracion"] % 60,
+        1,
+    )
+
+    print("\n" + "=" * 72)
+    print(f"Modo: {resultado['modo']}")
+    print(f"Clips procesados: {resultado['clips']}")
+    print(f"Resolución: {resultado['resolucion']}")
+    print(
+        f"Duración: {minutos} minutos "
+        f"y {segundos} segundos"
+    )
+    print(f"Video: {resultado['video']}")
+    print(f"Manifiesto: {resultado['manifiesto']}")
+    print("=" * 72)
+
+
 def main() -> None:
     parser = crear_parser()
     argumentos = parser.parse_args()
@@ -790,6 +913,10 @@ def main() -> None:
 
         if argumentos.comando == "local-assets":
             generar_recursos_locales(argumentos)
+            return
+
+        if argumentos.comando == "render":
+            renderizar_video(argumentos)
             return
 
     except Exception as error:
