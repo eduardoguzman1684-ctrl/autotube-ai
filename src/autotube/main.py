@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from autotube.ai.gemini_client import GeminiClient
 from autotube.content.ideas_generator import (
     NICHO_PREDETERMINADO,
     GeneradorIdeas,
+)
+from autotube.content.script_generator import (
+    GeneradorGuiones,
+    cargar_idea,
 )
 from autotube.core.config import load_settings
 from autotube.core.health import ejecutar_diagnostico
@@ -43,7 +48,7 @@ def crear_parser() -> argparse.ArgumentParser:
 
     ideas_parser = subcomandos.add_parser(
         "ideas",
-        help="Genera ideas estructuradas para videos de YouTube.",
+        help="Genera ideas estructuradas para videos.",
     )
 
     ideas_parser.add_argument(
@@ -63,6 +68,30 @@ def crear_parser() -> argparse.ArgumentParser:
         "--idioma",
         default="español",
         help="Idioma de las ideas generadas.",
+    )
+
+    script_parser = subcomandos.add_parser(
+        "script",
+        help="Genera un guion desde una idea guardada.",
+    )
+
+    script_parser.add_argument(
+        "--indice",
+        type=int,
+        default=1,
+        help="Número de la idea que se utilizará.",
+    )
+
+    script_parser.add_argument(
+        "--archivo",
+        default=None,
+        help="Archivo JSON de ideas. Por defecto usa el más reciente.",
+    )
+
+    script_parser.add_argument(
+        "--idioma",
+        default="español",
+        help="Idioma del guion generado.",
     )
 
     return parser
@@ -156,6 +185,67 @@ def generar_ideas(argumentos: argparse.Namespace) -> None:
     print("=" * 70)
 
 
+def generar_guion(argumentos: argparse.Namespace) -> None:
+    """Genera un guion a partir de una idea guardada."""
+    settings = load_settings()
+
+    archivo = (
+        Path(argumentos.archivo)
+        if argumentos.archivo
+        else None
+    )
+
+    idea, archivo_ideas = cargar_idea(
+        data_dir=settings.data_dir,
+        indice=argumentos.indice,
+        archivo=archivo,
+    )
+
+    print("\nGENERADOR DE GUIONES")
+    print("=" * 70)
+    print(f"Archivo de ideas: {archivo_ideas}")
+    print(f"Idea seleccionada: {argumentos.indice}")
+    print(f"Título: {idea.get('titulo', 'Sin título')}")
+    print("Generando guion...")
+
+    generador = GeneradorGuiones()
+
+    resultado = generador.generar(
+        idea=idea,
+        idioma=argumentos.idioma,
+    )
+
+    ruta = generador.guardar(
+        resultado=resultado,
+        data_dir=settings.data_dir,
+    )
+
+    guion = resultado["guion"]
+
+    print("=" * 70)
+    print(f"Título final: {guion['titulo']}")
+    print(f"Formato: {guion['formato']}")
+    print(
+        "Duración estimada: "
+        f"{guion['duracion_estimada_minutos']} minutos"
+    )
+    print(f"Escenas generadas: {len(guion['escenas'])}")
+    print(f"Gancho: {guion['gancho_inicial']}")
+
+    print("\nESCENAS")
+
+    for escena in guion["escenas"]:
+        print(
+            f"{escena['numero']}. {escena['titulo']} "
+            f"({escena['duracion_segundos']} segundos)"
+        )
+
+    print("\n" + "=" * 70)
+    print(f"Modelo utilizado: {resultado['modelo']}")
+    print(f"Archivo guardado: {ruta}")
+    print("=" * 70)
+
+
 def main() -> None:
     parser = crear_parser()
     argumentos = parser.parse_args()
@@ -188,6 +278,10 @@ def main() -> None:
 
         if argumentos.comando == "ideas":
             generar_ideas(argumentos)
+            return
+
+        if argumentos.comando == "script":
+            generar_guion(argumentos)
             return
 
     except Exception as error:
