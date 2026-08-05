@@ -16,6 +16,10 @@ from autotube.content.script_validator import (
     imprimir_reporte,
     validar_archivo_guion,
 )
+from autotube.content.script_fixer import (
+    ReparadorGuiones,
+    cargar_guion_para_correccion,
+)
 from autotube.core.config import load_settings
 from autotube.core.health import ejecutar_diagnostico
 from autotube.core.logging_config import configure_logging
@@ -114,6 +118,24 @@ def crear_parser() -> argparse.ArgumentParser:
         type=int,
         default=145,
         help="Velocidad estimada de narración en palabras por minuto.",
+    )
+
+    fix_parser = subcomandos.add_parser(
+        "script-fix",
+        help="Expande y corrige un guion demasiado corto.",
+    )
+
+    fix_parser.add_argument(
+        "--archivo",
+        default=None,
+        help="Archivo de guion. Por defecto usa el más reciente.",
+    )
+
+    fix_parser.add_argument(
+        "--ppm",
+        type=int,
+        default=145,
+        help="Velocidad objetivo en palabras por minuto.",
     )
 
     return parser
@@ -293,6 +315,51 @@ def revisar_guion(argumentos: argparse.Namespace) -> None:
         raise SystemExit(2)
 
 
+def corregir_guion(argumentos: argparse.Namespace) -> None:
+    """Expande la narración de un guion demasiado corto."""
+    settings = load_settings()
+
+    archivo = (
+        Path(argumentos.archivo)
+        if argumentos.archivo
+        else None
+    )
+
+    contenido, ruta_original = cargar_guion_para_correccion(
+        data_dir=settings.data_dir,
+        archivo=archivo,
+    )
+
+    print("\nCORRECCIÓN AUTOMÁTICA DEL GUION")
+    print("=" * 72)
+    print(f"Archivo original: {ruta_original}")
+    print(f"Velocidad objetivo: {argumentos.ppm} palabras por minuto")
+    print("Expandiendo narraciones...")
+
+    reparador = ReparadorGuiones()
+
+    resultado = reparador.corregir(
+        contenido=contenido,
+        palabras_por_minuto=argumentos.ppm,
+    )
+
+    ruta_corregida = reparador.guardar(
+        resultado=resultado,
+        data_dir=settings.data_dir,
+    )
+
+    correccion = resultado["correccion"]
+
+    print("=" * 72)
+    print(f"Palabras antes: {correccion['palabras_antes']}")
+    print(f"Palabras objetivo: {correccion['palabras_objetivo']}")
+    print(f"Palabras después: {correccion['palabras_despues']}")
+    print(f"Modelo utilizado: {resultado['modelo']}")
+    print(f"Guion corregido: {ruta_corregida}")
+    print("=" * 72)
+    print("Ejecuta 'autotube script-check' para validar el resultado.")
+
+
 def main() -> None:
     parser = crear_parser()
     argumentos = parser.parse_args()
@@ -333,6 +400,10 @@ def main() -> None:
 
         if argumentos.comando == "script-check":
             revisar_guion(argumentos)
+            return
+
+        if argumentos.comando == "script-fix":
+            corregir_guion(argumentos)
             return
 
     except Exception as error:
