@@ -12,6 +12,10 @@ from autotube.content.script_generator import (
     GeneradorGuiones,
     cargar_idea,
 )
+from autotube.content.script_validator import (
+    imprimir_reporte,
+    validar_archivo_guion,
+)
 from autotube.core.config import load_settings
 from autotube.core.health import ejecutar_diagnostico
 from autotube.core.logging_config import configure_logging
@@ -92,6 +96,24 @@ def crear_parser() -> argparse.ArgumentParser:
         "--idioma",
         default="español",
         help="Idioma del guion generado.",
+    )
+
+    check_parser = subcomandos.add_parser(
+        "script-check",
+        help="Comprueba la duración y calidad de un guion.",
+    )
+
+    check_parser.add_argument(
+        "--archivo",
+        default=None,
+        help="Archivo de guion. Por defecto usa el más reciente.",
+    )
+
+    check_parser.add_argument(
+        "--ppm",
+        type=int,
+        default=145,
+        help="Velocidad estimada de narración en palabras por minuto.",
     )
 
     return parser
@@ -246,6 +268,31 @@ def generar_guion(argumentos: argparse.Namespace) -> None:
     print("=" * 70)
 
 
+def revisar_guion(argumentos: argparse.Namespace) -> None:
+    """Ejecuta el control de calidad del guion."""
+    settings = load_settings()
+
+    archivo = (
+        Path(argumentos.archivo)
+        if argumentos.archivo
+        else None
+    )
+
+    reporte, ruta = validar_archivo_guion(
+        data_dir=settings.data_dir,
+        archivo=archivo,
+        palabras_por_minuto=argumentos.ppm,
+    )
+
+    imprimir_reporte(
+        reporte=reporte,
+        ruta=ruta,
+    )
+
+    if not reporte["aprobado"]:
+        raise SystemExit(2)
+
+
 def main() -> None:
     parser = crear_parser()
     argumentos = parser.parse_args()
@@ -282,6 +329,10 @@ def main() -> None:
 
         if argumentos.comando == "script":
             generar_guion(argumentos)
+            return
+
+        if argumentos.comando == "script-check":
+            revisar_guion(argumentos)
             return
 
     except Exception as error:
