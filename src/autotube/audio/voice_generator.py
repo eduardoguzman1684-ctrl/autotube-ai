@@ -20,8 +20,274 @@ VOZ_PREDETERMINADA = "es-MX-JorgeNeural"
 VELOCIDAD_PREDETERMINADA = "-4%"
 TONO_PREDETERMINADO = "-2Hz"
 VOLUMEN_PREDETERMINADO = "+0%"
+TIEMPO_MAXIMO_SEGMENTO = 120
+PAUSA_ENTRE_SEGMENTOS = 1.0
 
 logger = logging.getLogger("autotube.voice")
+
+
+NUMEROS_0_29 = {
+    0: "cero",
+    1: "uno",
+    2: "dos",
+    3: "tres",
+    4: "cuatro",
+    5: "cinco",
+    6: "seis",
+    7: "siete",
+    8: "ocho",
+    9: "nueve",
+    10: "diez",
+    11: "once",
+    12: "doce",
+    13: "trece",
+    14: "catorce",
+    15: "quince",
+    16: "dieciséis",
+    17: "diecisiete",
+    18: "dieciocho",
+    19: "diecinueve",
+    20: "veinte",
+    21: "veintiuno",
+    22: "veintidós",
+    23: "veintitrés",
+    24: "veinticuatro",
+    25: "veinticinco",
+    26: "veintiséis",
+    27: "veintisiete",
+    28: "veintiocho",
+    29: "veintinueve",
+}
+
+DECENAS = {
+    30: "treinta",
+    40: "cuarenta",
+    50: "cincuenta",
+    60: "sesenta",
+    70: "setenta",
+    80: "ochenta",
+    90: "noventa",
+}
+
+CENTENAS = {
+    200: "doscientos",
+    300: "trescientos",
+    400: "cuatrocientos",
+    500: "quinientos",
+    600: "seiscientos",
+    700: "setecientos",
+    800: "ochocientos",
+    900: "novecientos",
+}
+
+
+def numero_entero_a_palabras(numero: int) -> str:
+    """Convierte un número entero a palabras en español."""
+    if numero < 0:
+        return "menos " + numero_entero_a_palabras(
+            abs(numero)
+        )
+
+    if numero < 30:
+        return NUMEROS_0_29[numero]
+
+    if numero < 100:
+        decena = numero // 10 * 10
+        unidad = numero % 10
+
+        if unidad == 0:
+            return DECENAS[decena]
+
+        return (
+            f"{DECENAS[decena]} y "
+            f"{NUMEROS_0_29[unidad]}"
+        )
+
+    if numero == 100:
+        return "cien"
+
+    if numero < 200:
+        return (
+            "ciento "
+            + numero_entero_a_palabras(
+                numero - 100
+            )
+        )
+
+    if numero < 1000:
+        centena = numero // 100 * 100
+        resto = numero % 100
+
+        resultado = CENTENAS[centena]
+
+        if resto:
+            resultado += (
+                " "
+                + numero_entero_a_palabras(resto)
+            )
+
+        return resultado
+
+    if numero < 1_000_000:
+        miles = numero // 1000
+        resto = numero % 1000
+
+        if miles == 1:
+            resultado = "mil"
+        else:
+            resultado = (
+                numero_entero_a_palabras(miles)
+                + " mil"
+            )
+
+        if resto:
+            resultado += (
+                " "
+                + numero_entero_a_palabras(resto)
+            )
+
+        return resultado
+
+    if numero < 1_000_000_000:
+        millones = numero // 1_000_000
+        resto = numero % 1_000_000
+
+        if millones == 1:
+            resultado = "un millón"
+        else:
+            resultado = (
+                numero_entero_a_palabras(millones)
+                + " millones"
+            )
+
+        if resto:
+            resultado += (
+                " "
+                + numero_entero_a_palabras(resto)
+            )
+
+        return resultado
+
+    miles_millones = numero // 1_000_000_000
+    resto = numero % 1_000_000_000
+
+    if miles_millones == 1:
+        resultado = "mil millones"
+    else:
+        resultado = (
+            numero_entero_a_palabras(
+                miles_millones
+            )
+            + " mil millones"
+        )
+
+    if resto:
+        resultado += (
+            " "
+            + numero_entero_a_palabras(resto)
+        )
+
+    return resultado
+
+
+def numero_decimal_a_palabras(
+    texto: str,
+) -> str:
+    """Convierte un decimal a una lectura clara."""
+    negativo = texto.startswith("-")
+
+    if negativo:
+        texto = texto[1:]
+
+    separador = (
+        ","
+        if "," in texto
+        else "."
+    )
+
+    parte_entera, parte_decimal = texto.split(
+        separador,
+        maxsplit=1,
+    )
+
+    palabra_separador = (
+        "coma"
+        if separador == ","
+        else "punto"
+    )
+
+    resultado = numero_entero_a_palabras(
+        int(parte_entera)
+    )
+
+    decimales = " ".join(
+        numero_entero_a_palabras(
+            int(digito)
+        )
+        for digito in parte_decimal
+    )
+
+    resultado = (
+        f"{resultado} "
+        f"{palabra_separador} "
+        f"{decimales}"
+    )
+
+    if negativo:
+        resultado = "menos " + resultado
+
+    return resultado
+
+
+def normalizar_texto_voz(
+    texto: str,
+) -> str:
+    """Convierte números escritos con dígitos a español."""
+    texto = str(texto)
+
+    def reemplazar_porcentaje(
+        coincidencia: re.Match[str],
+    ) -> str:
+        valor = coincidencia.group(1)
+
+        if "." in valor or "," in valor:
+            palabras = numero_decimal_a_palabras(
+                valor
+            )
+        else:
+            palabras = numero_entero_a_palabras(
+                int(valor)
+            )
+
+        return f"{palabras} por ciento"
+
+    texto = re.sub(
+        r"(?<![\w])(-?\d+(?:[.,]\d+)?)\s*%",
+        reemplazar_porcentaje,
+        texto,
+    )
+
+    texto = re.sub(
+        r"(?<![\w])(-?\d+[.,]\d+)(?![\w])",
+        lambda coincidencia: numero_decimal_a_palabras(
+            coincidencia.group(1)
+        ),
+        texto,
+    )
+
+    texto = re.sub(
+        r"(?<![\w])(-?\d+)(?![\w])",
+        lambda coincidencia: numero_entero_a_palabras(
+            int(coincidencia.group(1))
+        ),
+        texto,
+    )
+
+    return re.sub(
+        r"\s+",
+        " ",
+        texto,
+    ).strip()
 
 
 def cargar_guion_audio(
@@ -224,7 +490,10 @@ class GeneradorVoz:
                     volume=self.volumen,
                 )
 
-                await comunicador.save(str(destino))
+                await asyncio.wait_for(
+                    comunicador.save(str(destino)),
+                    timeout=TIEMPO_MAXIMO_SEGMENTO,
+                )
 
                 if (
                     not destino.is_file()
@@ -233,6 +502,10 @@ class GeneradorVoz:
                     raise RuntimeError(
                         "Edge TTS no generó un archivo válido."
                     )
+
+                await asyncio.sleep(
+                    PAUSA_ENTRE_SEGMENTOS
+                )
 
                 return
 
@@ -360,8 +633,18 @@ class GeneradorVoz:
                 f"{segmento['titulo']}"
             )
 
+            texto_original = str(
+                segmento["texto"]
+            )
+
+            texto_voz_normalizado = (
+                normalizar_texto_voz(
+                    texto_original
+                )
+            )
+
             await self.generar_segmento(
-                texto=str(segmento["texto"]),
+                texto=texto_voz_normalizado,
                 destino=archivo,
             )
 
@@ -374,6 +657,7 @@ class GeneradorVoz:
             resultados.append(
                 {
                     **segmento,
+                    "texto_voz": texto_voz_normalizado,
                     "archivo": archivo.name,
                     "duracion_real_segundos": duracion,
                 }

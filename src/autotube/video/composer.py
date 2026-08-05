@@ -278,6 +278,127 @@ def obtener_duracion(ruta: Path) -> float:
     )
 
 
+def sincronizar_duraciones_con_audio(
+    elementos: list[dict[str, Any]],
+    audio_manifest: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Ajusta cada grupo de clips a su audio real."""
+    segmentos_audio = audio_manifest.get(
+        "segmentos",
+        [],
+    )
+
+    copias = [
+        dict(elemento)
+        for elemento in elementos
+    ]
+
+    if not isinstance(
+        segmentos_audio,
+        list,
+    ):
+        return copias
+
+    grupos: dict[
+        int,
+        list[dict[str, Any]],
+    ] = {}
+
+    for elemento in copias:
+        indice = entero_seguro(
+            elemento.get(
+                "segmento_indice",
+                0,
+            )
+        )
+
+        grupos.setdefault(
+            indice,
+            [],
+        ).append(elemento)
+
+    for indice, segmento_audio in enumerate(
+        segmentos_audio,
+        start=1,
+    ):
+        if not isinstance(
+            segmento_audio,
+            dict,
+        ):
+            continue
+
+        grupo = grupos.get(
+            indice,
+            [],
+        )
+
+        if not grupo:
+            continue
+
+        duracion_objetivo = flotante_seguro(
+            segmento_audio.get(
+                "duracion_real_segundos",
+                0,
+            )
+        )
+
+        duracion_actual = sum(
+            flotante_seguro(
+                elemento.get(
+                    "duracion_objetivo_segundos",
+                    0,
+                )
+            )
+            for elemento in grupo
+        )
+
+        if (
+            duracion_objetivo <= 0
+            or duracion_actual <= 0
+        ):
+            continue
+
+        nuevas_duraciones = [
+            round(
+                duracion_objetivo
+                * flotante_seguro(
+                    elemento.get(
+                        "duracion_objetivo_segundos",
+                        0,
+                    )
+                )
+                / duracion_actual,
+                3,
+            )
+            for elemento in grupo
+        ]
+
+        diferencia = round(
+            duracion_objetivo
+            - sum(nuevas_duraciones),
+            3,
+        )
+
+        nuevas_duraciones[-1] = round(
+            nuevas_duraciones[-1]
+            + diferencia,
+            3,
+        )
+
+        for elemento, duracion in zip(
+            grupo,
+            nuevas_duraciones,
+        ):
+            elemento[
+                "duracion_objetivo_segundos"
+            ] = max(
+                0.1,
+                duracion,
+            )
+
+    return copias
+
+
 class CompositorVideo:
     """Compone recursos visuales y narración utilizando FFmpeg."""
 
@@ -628,6 +749,11 @@ class CompositorVideo:
         """Renderiza una vista previa o el video completo."""
         elementos = list(
             assets["elementos"]
+        )
+
+        elementos = sincronizar_duraciones_con_audio(
+            elementos=elementos,
+            audio_manifest=audio_manifest,
         )
 
         if preview:
