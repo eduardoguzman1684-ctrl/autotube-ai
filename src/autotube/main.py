@@ -4,6 +4,10 @@ import argparse
 from pathlib import Path
 
 from autotube.ai.gemini_client import GeminiClient
+from autotube.audio.voice_generator import (
+    GeneradorVoz,
+    cargar_guion_audio,
+)
 from autotube.content.ideas_generator import (
     NICHO_PREDETERMINADO,
     GeneradorIdeas,
@@ -136,6 +140,35 @@ def crear_parser() -> argparse.ArgumentParser:
         type=int,
         default=145,
         help="Velocidad objetivo en palabras por minuto.",
+    )
+
+    voice_parser = subcomandos.add_parser(
+        "voice",
+        help="Genera la narración completa del guion.",
+    )
+
+    voice_parser.add_argument(
+        "--archivo",
+        default=None,
+        help="Archivo de guion. Por defecto usa el más reciente.",
+    )
+
+    voice_parser.add_argument(
+        "--voz",
+        default="es-MX-JorgeNeural",
+        help="Voz utilizada por Edge TTS.",
+    )
+
+    voice_parser.add_argument(
+        "--velocidad",
+        default="-4%",
+        help="Velocidad de la narración.",
+    )
+
+    voice_parser.add_argument(
+        "--tono",
+        default="-2Hz",
+        help="Ajuste del tono de voz.",
     )
 
     return parser
@@ -360,6 +393,72 @@ def corregir_guion(argumentos: argparse.Namespace) -> None:
     print("Ejecuta 'autotube script-check' para validar el resultado.")
 
 
+def generar_voz(argumentos: argparse.Namespace) -> None:
+    """Genera la narración del guion más reciente."""
+    settings = load_settings()
+
+    archivo = (
+        Path(argumentos.archivo)
+        if argumentos.archivo
+        else None
+    )
+
+    contenido, ruta_guion = cargar_guion_audio(
+        data_dir=settings.data_dir,
+        archivo=archivo,
+    )
+
+    print("\nGENERADOR DE VOZ")
+    print("=" * 72)
+    print(f"Guion: {ruta_guion}")
+    print(f"Voz: {argumentos.voz}")
+    print(f"Velocidad: {argumentos.velocidad}")
+    print(f"Tono: {argumentos.tono}")
+    print("=" * 72)
+
+    generador = GeneradorVoz(
+        voz=argumentos.voz,
+        velocidad=argumentos.velocidad,
+        tono=argumentos.tono,
+    )
+
+    resultado = generador.generar(
+        contenido=contenido,
+        ruta_guion=ruta_guion,
+        output_dir=settings.output_dir,
+    )
+
+    minutos = int(
+        resultado["duracion_total_segundos"]
+        // 60
+    )
+
+    segundos = round(
+        resultado["duracion_total_segundos"]
+        % 60,
+        1,
+    )
+
+    print("\n" + "=" * 72)
+    print(
+        f"Segmentos generados: "
+        f"{len(resultado['segmentos'])}"
+    )
+    print(
+        f"Duración total: "
+        f"{minutos} minutos y {segundos} segundos"
+    )
+    print(
+        f"Audio completo: "
+        f"{resultado['audio_completo']}"
+    )
+    print(
+        f"Manifiesto: "
+        f"{resultado['manifiesto']}"
+    )
+    print("=" * 72)
+
+
 def main() -> None:
     parser = crear_parser()
     argumentos = parser.parse_args()
@@ -404,6 +503,10 @@ def main() -> None:
 
         if argumentos.comando == "script-fix":
             corregir_guion(argumentos)
+            return
+
+        if argumentos.comando == "voice":
+            generar_voz(argumentos)
             return
 
     except Exception as error:
