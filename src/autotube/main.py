@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+from autotube.ai.gemini_client import GeminiClient
 from autotube.core.config import load_settings
 from autotube.core.health import ejecutar_diagnostico
 from autotube.core.logging_config import configure_logging
@@ -29,6 +30,11 @@ def crear_parser() -> argparse.ArgumentParser:
     subcomandos.add_parser(
         "security",
         help="Comprueba la protección de claves y credenciales.",
+    )
+
+    subcomandos.add_parser(
+        "gemini-test",
+        help="Comprueba la conexión real con Gemini.",
     )
 
     return parser
@@ -68,6 +74,20 @@ def mostrar_informacion() -> None:
     print("=" * 60)
 
 
+def probar_gemini() -> None:
+    """Comprueba la conexión utilizando el cliente interno."""
+    print("\nPRUEBA DE GEMINI")
+    print("=" * 60)
+
+    cliente = GeminiClient()
+    respuesta = cliente.probar_conexion()
+
+    print(f"Modelo: {cliente.model}")
+    print(f"Respuesta: {respuesta}")
+    print("=" * 60)
+    print("Gemini está conectado correctamente.")
+
+
 def main() -> None:
     parser = crear_parser()
     argumentos = parser.parse_args()
@@ -93,10 +113,21 @@ def main() -> None:
         mostrar_informacion()
         return
 
+    if argumentos.comando == "gemini-test":
+        try:
+            probar_gemini()
+        except Exception as error:
+            logger.exception("La prueba de Gemini falló.")
+            print(f"\nERROR: {error}")
+            raise SystemExit(1) from error
+
+        return
+
     print("AutoTube AI está funcionando correctamente.")
     print("Usa 'autotube doctor' para comprobar el sistema.")
     print("Usa 'autotube info' para ver la configuración.")
     print("Usa 'autotube security' para revisar las credenciales.")
+    print("Usa 'autotube gemini-test' para probar Gemini.")
 
 
 if __name__ == "__main__":
