@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+import logging
 import os
+import random
+import time
 
 from google import genai
+from google.genai import errors
 
 from autotube.core.config import load_settings
 
 
 MODELO_PREDETERMINADO = "gemini-3.6-flash"
+MODELO_RESPALDO = "gemini-3.5-flash-lite"
+
+logger = logging.getLogger("autotube.gemini")
 
 
 class GeminiClient:
@@ -17,6 +24,9 @@ class GeminiClient:
         self,
         api_key: str | None = None,
         model: str | None = None,
+        fallback_model: str | None = None,
+        max_attempts: int = 3,
+        base_delay: float = 2.0,
     ) -> None:
         settings = load_settings()
 
@@ -32,6 +42,16 @@ class GeminiClient:
             or MODELO_PREDETERMINADO
         ).strip()
 
+        self.fallback_model = (
+            fallback_model
+            or os.getenv("GEMINI_FALLBACK_MODEL")
+            or MODELO_RESPALDO
+        ).strip()
+
+        self.max_attempts = max(1, max_attempts)
+        self.base_delay = max(0.5, base_delay)
+        self.last_model_used: str | None = None
+
         if not self.api_key:
             raise ValueError(
                 "GEMINI_API_KEY no está configurada en el archivo .env."
@@ -39,26 +59,96 @@ class GeminiClient:
 
         self.client = genai.Client(api_key=self.api_key)
 
+    def _modelos_disponibles(self) -> list[str]:
+        """Devuelve los modelos en orden de prioridad sin duplicados."""
+        modelos: list[str] = []
+
+        for modelo in (self.model, self.fallback_model):
+            if modelo and modelo not in modelos:
+                modelos.append(modelo)
+
+        return modelos
+
+    def _generar_con_modelo(
+        self,
+        modelo: str,
+        prompt: str,
+    ) -> str:
+        """Genera texto con reintentos exponenciales ante errores 503."""
+        ultimo_error: Exception | None = None
+
+        for intento in range(1, self.max_attempts + 1):
+            try:
+                respuesta = self.client.models.generate_content(
+                    model=modelo,
+                    contents=prompt,
+                )
+
+                texto = (respuesta.text or "").strip()
+
+                if not texto:
+                    raise RuntimeError(
+                        "Gemini respondió, pero no devolvió texto."
+                    )
+
+                self.last_model_used = modelo
+                return texto
+
+            except errors.ServerError as error:
+                ultimo_error = error
+
+                if intento >= self.max_attempts:
+                    break
+
+                espera = (
+                    self.base_delay * (2 ** (intento - 1))
+                    + random.uniform(0.2, 0.8)
+                )
+
+                logger.warning(
+                    "Gemini no disponible | modelo=%s | "
+                    "intento=%s/%s | reintento en %.1f segundos",
+                    modelo,
+                    intento,
+                    self.max_attempts,
+                    espera,
+                )
+
+                time.sleep(espera)
+
+        raise RuntimeError(
+            f"El modelo {modelo} continúa temporalmente no disponible."
+        ) from ultimo_error
+
     def generar_texto(self, prompt: str) -> str:
-        """Envía un prompt a Gemini y devuelve el texto generado."""
+        """Genera texto usando el modelo principal y uno de respaldo."""
         prompt_limpio = prompt.strip()
 
         if not prompt_limpio:
             raise ValueError("El prompt no puede estar vacío.")
 
-        respuesta = self.client.models.generate_content(
-            model=self.model,
-            contents=prompt_limpio,
-        )
+        ultimo_error: Exception | None = None
 
-        texto = (respuesta.text or "").strip()
+        for modelo in self._modelos_disponibles():
+            try:
+                return self._generar_con_modelo(
+                    modelo=modelo,
+                    prompt=prompt_limpio,
+                )
 
-        if not texto:
-            raise RuntimeError(
-                "Gemini respondió, pero no devolvió contenido de texto."
-            )
+            except RuntimeError as error:
+                ultimo_error = error
 
-        return texto
+                logger.warning(
+                    "Se agotaron los intentos para %s. "
+                    "Probando el siguiente modelo.",
+                    modelo,
+                )
+
+        raise RuntimeError(
+            "Gemini no está disponible después de probar "
+            "el modelo principal y el modelo de respaldo."
+        ) from ultimo_error
 
     def probar_conexion(self) -> str:
         """Realiza una prueba sencilla de conexión con Gemini."""
