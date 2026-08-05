@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=83"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autotube-ai"
+version = "0.1.0"
+description = "Sistema automatizado para producir contenido de YouTube con inteligencia artificial"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[project.scripts]
+autotube = "autotube.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
