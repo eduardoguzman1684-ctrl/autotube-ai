@@ -5,6 +5,7 @@ import argparse
 from autotube.core.config import load_settings
 from autotube.core.health import ejecutar_diagnostico
 from autotube.core.logging_config import configure_logging
+from autotube.core.security import ejecutar_revision_seguridad
 
 
 def crear_parser() -> argparse.ArgumentParser:
@@ -22,7 +23,12 @@ def crear_parser() -> argparse.ArgumentParser:
 
     subcomandos.add_parser(
         "info",
-        help="Muestra la configuración general sin revelar claves privadas.",
+        help="Muestra la configuración sin revelar claves privadas.",
+    )
+
+    subcomandos.add_parser(
+        "security",
+        help="Comprueba la protección de claves y credenciales.",
     )
 
     return parser
@@ -79,6 +85,10 @@ def main() -> None:
         correcto = ejecutar_diagnostico()
         raise SystemExit(0 if correcto else 1)
 
+    if argumentos.comando == "security":
+        correcto = ejecutar_revision_seguridad()
+        raise SystemExit(0 if correcto else 1)
+
     if argumentos.comando == "info":
         mostrar_informacion()
         return
@@ -86,6 +96,7 @@ def main() -> None:
     print("AutoTube AI está funcionando correctamente.")
     print("Usa 'autotube doctor' para comprobar el sistema.")
     print("Usa 'autotube info' para ver la configuración.")
+    print("Usa 'autotube security' para revisar las credenciales.")
 
 
 if __name__ == "__main__":
