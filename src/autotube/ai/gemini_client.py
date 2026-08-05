@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import random
 import time
+from typing import Any
 
 from google import genai
-from google.genai import errors
+from google.genai import errors, types
 
 from autotube.core.config import load_settings
 
@@ -73,8 +75,9 @@ class GeminiClient:
         self,
         modelo: str,
         prompt: str,
+        config: types.GenerateContentConfig | None = None,
     ) -> str:
-        """Genera texto con reintentos exponenciales ante errores 503."""
+        """Genera contenido con reintentos ante fallos temporales."""
         ultimo_error: Exception | None = None
 
         for intento in range(1, self.max_attempts + 1):
@@ -82,13 +85,14 @@ class GeminiClient:
                 respuesta = self.client.models.generate_content(
                     model=modelo,
                     contents=prompt,
+                    config=config,
                 )
 
                 texto = (respuesta.text or "").strip()
 
                 if not texto:
                     raise RuntimeError(
-                        "Gemini respondió, pero no devolvió texto."
+                        "Gemini respondió, pero no devolvió contenido."
                     )
 
                 self.last_model_used = modelo
@@ -120,20 +124,20 @@ class GeminiClient:
             f"El modelo {modelo} continúa temporalmente no disponible."
         ) from ultimo_error
 
-    def generar_texto(self, prompt: str) -> str:
-        """Genera texto usando el modelo principal y uno de respaldo."""
-        prompt_limpio = prompt.strip()
-
-        if not prompt_limpio:
-            raise ValueError("El prompt no puede estar vacío.")
-
+    def _generar_con_respaldo(
+        self,
+        prompt: str,
+        config: types.GenerateContentConfig | None = None,
+    ) -> str:
+        """Prueba el modelo principal y luego el modelo de respaldo."""
         ultimo_error: Exception | None = None
 
         for modelo in self._modelos_disponibles():
             try:
                 return self._generar_con_modelo(
                     modelo=modelo,
-                    prompt=prompt_limpio,
+                    prompt=prompt,
+                    config=config,
                 )
 
             except RuntimeError as error:
@@ -149,6 +153,53 @@ class GeminiClient:
             "Gemini no está disponible después de probar "
             "el modelo principal y el modelo de respaldo."
         ) from ultimo_error
+
+    def generar_texto(self, prompt: str) -> str:
+        """Genera una respuesta de texto normal."""
+        prompt_limpio = prompt.strip()
+
+        if not prompt_limpio:
+            raise ValueError("El prompt no puede estar vacío.")
+
+        return self._generar_con_respaldo(prompt_limpio)
+
+    def generar_json(
+        self,
+        prompt: str,
+        schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Genera y valida una respuesta JSON estructurada."""
+        prompt_limpio = prompt.strip()
+
+        if not prompt_limpio:
+            raise ValueError("El prompt no puede estar vacío.")
+
+        if not schema:
+            raise ValueError("El esquema JSON no puede estar vacío.")
+
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_json_schema=schema,
+        )
+
+        texto = self._generar_con_respaldo(
+            prompt=prompt_limpio,
+            config=config,
+        )
+
+        try:
+            resultado = json.loads(texto)
+        except json.JSONDecodeError as error:
+            raise RuntimeError(
+                "Gemini devolvió una respuesta JSON inválida."
+            ) from error
+
+        if not isinstance(resultado, dict):
+            raise RuntimeError(
+                "La respuesta JSON debe contener un objeto principal."
+            )
+
+        return resultado
 
     def probar_conexion(self) -> str:
         """Realiza una prueba sencilla de conexión con Gemini."""
