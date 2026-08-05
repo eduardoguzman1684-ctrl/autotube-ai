@@ -12,6 +12,10 @@ from autotube.visuals.visual_planner import (
     PlanificadorVisual,
     cargar_contexto_visual,
 )
+from autotube.visuals.asset_collector import (
+    RecolectorRecursos,
+    cargar_plan_visual,
+)
 from autotube.content.ideas_generator import (
     NICHO_PREDETERMINADO,
     GeneradorIdeas,
@@ -190,6 +194,27 @@ def crear_parser() -> argparse.ArgumentParser:
         "--manifiesto",
         default=None,
         help="Manifiesto de audio. Por defecto usa el más reciente.",
+    )
+
+    assets_parser = subcomandos.add_parser(
+        "assets",
+        help="Descarga recursos de Pixabay para el plan visual.",
+    )
+
+    assets_parser.add_argument(
+        "--plan",
+        default=None,
+        help="Plan visual. Por defecto usa el más reciente.",
+    )
+
+    assets_parser.add_argument(
+        "--limite",
+        type=int,
+        default=6,
+        help=(
+            "Cantidad máxima de archivos a descargar. "
+            "Usa 0 para procesar el plan completo."
+        ),
     )
 
     return parser
@@ -546,6 +571,77 @@ def generar_plan_visual(argumentos: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def descargar_recursos(argumentos: argparse.Namespace) -> None:
+    """Descarga recursos visuales desde Pixabay."""
+    settings = load_settings()
+
+    if argumentos.limite < 0:
+        raise ValueError(
+            "El límite no puede ser negativo."
+        )
+
+    archivo_plan = (
+        Path(argumentos.plan)
+        if argumentos.plan
+        else None
+    )
+
+    contenido_plan, ruta_plan = cargar_plan_visual(
+        data_dir=settings.data_dir,
+        archivo=archivo_plan,
+    )
+
+    print("\nRECOLECTOR DE RECURSOS VISUALES")
+    print("=" * 72)
+    print(f"Plan visual: {ruta_plan}")
+
+    if argumentos.limite == 0:
+        print("Límite: plan completo")
+    else:
+        print(
+            f"Límite de descargas: "
+            f"{argumentos.limite}"
+        )
+
+    print("=" * 72)
+
+    recolector = RecolectorRecursos(
+        data_dir=settings.data_dir,
+        output_dir=settings.output_dir,
+    )
+
+    resultado = recolector.recolectar(
+        contenido_plan=contenido_plan,
+        ruta_plan=ruta_plan,
+        limite=argumentos.limite,
+    )
+
+    resumen = resultado["resumen"]
+
+    print("\n" + "=" * 72)
+    print(
+        f"Recursos descargados: "
+        f"{resumen['descargados']}"
+    )
+    print(
+        f"Pendientes de generación local: "
+        f"{resumen['pendientes_generacion']}"
+    )
+    print(
+        f"Omitidos por el límite: "
+        f"{resumen['omitidos_por_limite']}"
+    )
+    print(
+        f"Errores: "
+        f"{resumen['errores']}"
+    )
+    print(
+        f"Manifiesto: "
+        f"{resultado['manifiesto']}"
+    )
+    print("=" * 72)
+
+
 def main() -> None:
     parser = crear_parser()
     argumentos = parser.parse_args()
@@ -598,6 +694,10 @@ def main() -> None:
 
         if argumentos.comando == "visual-plan":
             generar_plan_visual(argumentos)
+            return
+
+        if argumentos.comando == "assets":
+            descargar_recursos(argumentos)
             return
 
     except Exception as error:
