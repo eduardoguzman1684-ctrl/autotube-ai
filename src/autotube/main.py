@@ -8,6 +8,10 @@ from autotube.audio.voice_generator import (
     GeneradorVoz,
     cargar_guion_audio,
 )
+from autotube.visuals.visual_planner import (
+    PlanificadorVisual,
+    cargar_contexto_visual,
+)
 from autotube.content.ideas_generator import (
     NICHO_PREDETERMINADO,
     GeneradorIdeas,
@@ -169,6 +173,23 @@ def crear_parser() -> argparse.ArgumentParser:
         "--tono",
         default="-2Hz",
         help="Ajuste del tono de voz.",
+    )
+
+    visual_parser = subcomandos.add_parser(
+        "visual-plan",
+        help="Crea un plan visual sincronizado con la narración.",
+    )
+
+    visual_parser.add_argument(
+        "--guion",
+        default=None,
+        help="Archivo de guion. Por defecto usa el del audio.",
+    )
+
+    visual_parser.add_argument(
+        "--manifiesto",
+        default=None,
+        help="Manifiesto de audio. Por defecto usa el más reciente.",
     )
 
     return parser
@@ -459,6 +480,72 @@ def generar_voz(argumentos: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def generar_plan_visual(argumentos: argparse.Namespace) -> None:
+    """Crea un plan visual sincronizado con el audio."""
+    settings = load_settings()
+
+    archivo_guion = (
+        Path(argumentos.guion)
+        if argumentos.guion
+        else None
+    )
+
+    archivo_manifiesto = (
+        Path(argumentos.manifiesto)
+        if argumentos.manifiesto
+        else None
+    )
+
+    (
+        contenido_guion,
+        manifiesto,
+        ruta_guion,
+        ruta_manifiesto,
+    ) = cargar_contexto_visual(
+        data_dir=settings.data_dir,
+        output_dir=settings.output_dir,
+        archivo_guion=archivo_guion,
+        archivo_manifiesto=archivo_manifiesto,
+    )
+
+    print("\nPLANIFICADOR VISUAL")
+    print("=" * 72)
+    print(f"Guion: {ruta_guion}")
+    print(f"Audio: {ruta_manifiesto}")
+    print(
+        f"Duración total: "
+        f"{manifiesto.get('duracion_total_segundos', 0)} segundos"
+    )
+    print("Creando plan visual sincronizado...")
+    print("=" * 72)
+
+    planificador = PlanificadorVisual()
+
+    resultado = planificador.generar(
+        contenido_guion=contenido_guion,
+        manifiesto=manifiesto,
+    )
+
+    ruta_resultado = planificador.guardar(
+        resultado=resultado,
+        data_dir=settings.data_dir,
+    )
+
+    segmentos = resultado["plan_visual"]["segmentos"]
+
+    cantidad_clips = sum(
+        len(segmento.get("clips", []))
+        for segmento in segmentos
+    )
+
+    print("\n" + "=" * 72)
+    print(f"Segmentos visuales: {len(segmentos)}")
+    print(f"Clips planificados: {cantidad_clips}")
+    print(f"Modelo utilizado: {resultado['modelo']}")
+    print(f"Plan guardado: {ruta_resultado}")
+    print("=" * 72)
+
+
 def main() -> None:
     parser = crear_parser()
     argumentos = parser.parse_args()
@@ -507,6 +594,10 @@ def main() -> None:
 
         if argumentos.comando == "voice":
             generar_voz(argumentos)
+            return
+
+        if argumentos.comando == "visual-plan":
+            generar_plan_visual(argumentos)
             return
 
     except Exception as error:
