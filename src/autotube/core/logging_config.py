@@ -14,7 +14,9 @@ def configure_logging(settings: Settings) -> logging.Logger:
         return logger
 
     level = getattr(logging, settings.log_level, logging.INFO)
+
     logger.setLevel(level)
+    logger.propagate = False
 
     formatter = logging.Formatter(
         "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -22,7 +24,7 @@ def configure_logging(settings: Settings) -> logging.Logger:
     )
 
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(level)
+    console_handler.setLevel(logging.WARNING)
     console_handler.setFormatter(formatter)
 
     log_file = settings.logs_dir / "autotube.log"

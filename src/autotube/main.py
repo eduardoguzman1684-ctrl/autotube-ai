@@ -40,22 +40,25 @@ def mostrar_informacion() -> None:
     print(f"Datos: {settings.data_dir}")
     print(f"Salidas: {settings.output_dir}")
     print(f"Registros: {settings.logs_dir}")
+
     print(
         "Gemini API: "
         + ("Configurada" if settings.gemini_api_key else "Pendiente")
     )
+
     print(
         "Pixabay API: "
         + ("Configurada" if settings.pixabay_api_key else "Pendiente")
     )
-    print(
-        "YouTube: "
-        + (
-            "Ruta configurada"
-            if settings.youtube_client_secret_file
-            else "Pendiente"
+
+    if settings.youtube_is_configured:
+        print("YouTube: Configurado")
+    else:
+        print(
+            "YouTube: Pendiente; falta el archivo "
+            f"{settings.youtube_client_secret_path}"
         )
-    )
+
     print("=" * 60)
 
 
@@ -66,7 +69,11 @@ def main() -> None:
     settings = load_settings()
     logger = configure_logging(settings)
 
-    logger.debug("AutoTube AI iniciado con comando: %s", argumentos.comando)
+    logger.info(
+        "AutoTube AI iniciado | comando=%s | entorno=%s",
+        argumentos.comando or "inicio",
+        settings.environment,
+    )
 
     if argumentos.comando == "doctor":
         correcto = ejecutar_diagnostico()

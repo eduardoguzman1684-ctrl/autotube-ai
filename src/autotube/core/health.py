@@ -4,7 +4,6 @@ import platform
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 
 from autotube.core.config import load_settings
 
@@ -103,22 +102,30 @@ def ejecutar_diagnostico() -> bool:
             todo_correcto = False
 
     print("=" * 70)
-
-    claves = [
-        ("Gemini API", bool(settings.gemini_api_key)),
-        ("Pixabay API", bool(settings.pixabay_api_key)),
-        (
-            "YouTube Client Secret",
-            bool(settings.youtube_client_secret_file),
-        ),
-    ]
-
     print("\nSERVICIOS OPCIONALES")
     print("=" * 70)
 
-    for nombre, configurado in claves:
+    servicios = [
+        (
+            "Gemini API",
+            bool(settings.gemini_api_key),
+            "Clave API",
+        ),
+        (
+            "Pixabay API",
+            bool(settings.pixabay_api_key),
+            "Clave API",
+        ),
+        (
+            "YouTube Client Secret",
+            settings.youtube_is_configured,
+            str(settings.youtube_client_secret_path or "Sin ruta"),
+        ),
+    ]
+
+    for nombre, configurado, detalle in servicios:
         estado = "CONFIGURADO" if configurado else "PENDIENTE"
-        print(f"[{estado:<11}] {nombre}")
+        print(f"[{estado:<11}] {nombre}: {detalle}")
 
     print("=" * 70)
 

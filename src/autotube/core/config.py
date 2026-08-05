@@ -24,6 +24,25 @@ class Settings:
     pixabay_api_key: str | None
     youtube_client_secret_file: str | None
 
+    @property
+    def youtube_client_secret_path(self) -> Path | None:
+        """Devuelve la ruta absoluta del archivo de credenciales de YouTube."""
+        if not self.youtube_client_secret_file:
+            return None
+
+        path = Path(self.youtube_client_secret_file).expanduser()
+
+        if not path.is_absolute():
+            path = self.project_root / path
+
+        return path.resolve()
+
+    @property
+    def youtube_is_configured(self) -> bool:
+        """Indica si el archivo real de credenciales de YouTube existe."""
+        path = self.youtube_client_secret_path
+        return path is not None and path.is_file()
+
     def create_directories(self) -> None:
         """Crea las carpetas de trabajo cuando no existen."""
         for directory in (
@@ -41,7 +60,7 @@ def find_project_root() -> Path:
 
 
 def load_settings() -> Settings:
-    """Carga la configuración desde variables del sistema y el archivo .env."""
+    """Carga la configuración desde variables del sistema y .env."""
     project_root = find_project_root()
     env_file = project_root / ".env"
 
