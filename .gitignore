@@ -12,3 +12,9 @@ data/
 .idea/
 Thumbs.db
 .DS_Store
+config/client_secret*.json
+config/token*.json
+config/credentials*.json
+secrets/
+*.pem
+*.key
