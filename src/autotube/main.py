@@ -3,6 +3,10 @@ from __future__ import annotations
 import argparse
 
 from autotube.ai.gemini_client import GeminiClient
+from autotube.content.ideas_generator import (
+    NICHO_PREDETERMINADO,
+    GeneradorIdeas,
+)
 from autotube.core.config import load_settings
 from autotube.core.health import ejecutar_diagnostico
 from autotube.core.logging_config import configure_logging
@@ -35,6 +39,30 @@ def crear_parser() -> argparse.ArgumentParser:
     subcomandos.add_parser(
         "gemini-test",
         help="Comprueba la conexión real con Gemini.",
+    )
+
+    ideas_parser = subcomandos.add_parser(
+        "ideas",
+        help="Genera ideas estructuradas para videos de YouTube.",
+    )
+
+    ideas_parser.add_argument(
+        "--nicho",
+        default=NICHO_PREDETERMINADO,
+        help="Nicho para el cual se generarán las ideas.",
+    )
+
+    ideas_parser.add_argument(
+        "--cantidad",
+        type=int,
+        default=5,
+        help="Cantidad de ideas, entre 1 y 20.",
+    )
+
+    ideas_parser.add_argument(
+        "--idioma",
+        default="español",
+        help="Idioma de las ideas generadas.",
     )
 
     return parser
@@ -82,10 +110,50 @@ def probar_gemini() -> None:
     cliente = GeminiClient()
     respuesta = cliente.probar_conexion()
 
-    print(f"Modelo: {cliente.model}")
+    print(f"Modelo configurado: {cliente.model}")
+    print(f"Modelo utilizado: {cliente.last_model_used}")
     print(f"Respuesta: {respuesta}")
     print("=" * 60)
     print("Gemini está conectado correctamente.")
+
+
+def generar_ideas(argumentos: argparse.Namespace) -> None:
+    """Genera, muestra y guarda ideas para videos."""
+    settings = load_settings()
+    generador = GeneradorIdeas()
+
+    print("\nGENERADOR DE IDEAS")
+    print("=" * 70)
+    print(f"Nicho: {argumentos.nicho}")
+    print(f"Cantidad solicitada: {argumentos.cantidad}")
+    print("Generando ideas...")
+
+    resultado = generador.generar(
+        nicho=argumentos.nicho,
+        cantidad=argumentos.cantidad,
+        idioma=argumentos.idioma,
+    )
+
+    ruta = generador.guardar(
+        resultado=resultado,
+        data_dir=settings.data_dir,
+    )
+
+    print("=" * 70)
+
+    for numero, idea in enumerate(resultado["ideas"], start=1):
+        print(f"\n{numero}. {idea['titulo']}")
+        print(f"   Formato: {idea['formato']}")
+        print(f"   Duración: {idea['duracion_minutos']} minutos")
+        print(f"   Palabra clave: {idea['palabra_clave']}")
+        print(f"   Potencial: {idea['potencial']}")
+        print(f"   Gancho: {idea['gancho']}")
+        print(f"   Ángulo: {idea['angulo']}")
+
+    print("\n" + "=" * 70)
+    print(f"Modelo utilizado: {resultado['modelo']}")
+    print(f"Archivo guardado: {ruta}")
+    print("=" * 70)
 
 
 def main() -> None:
@@ -101,33 +169,37 @@ def main() -> None:
         settings.environment,
     )
 
-    if argumentos.comando == "doctor":
-        correcto = ejecutar_diagnostico()
-        raise SystemExit(0 if correcto else 1)
+    try:
+        if argumentos.comando == "doctor":
+            correcto = ejecutar_diagnostico()
+            raise SystemExit(0 if correcto else 1)
 
-    if argumentos.comando == "security":
-        correcto = ejecutar_revision_seguridad()
-        raise SystemExit(0 if correcto else 1)
+        if argumentos.comando == "security":
+            correcto = ejecutar_revision_seguridad()
+            raise SystemExit(0 if correcto else 1)
 
-    if argumentos.comando == "info":
-        mostrar_informacion()
-        return
+        if argumentos.comando == "info":
+            mostrar_informacion()
+            return
 
-    if argumentos.comando == "gemini-test":
-        try:
+        if argumentos.comando == "gemini-test":
             probar_gemini()
-        except Exception as error:
-            logger.exception("La prueba de Gemini falló.")
-            print(f"\nERROR: {error}")
-            raise SystemExit(1) from error
+            return
 
-        return
+        if argumentos.comando == "ideas":
+            generar_ideas(argumentos)
+            return
+
+    except Exception as error:
+        logger.exception(
+            "El comando %s falló.",
+            argumentos.comando,
+        )
+        print(f"\nERROR: {error}")
+        raise SystemExit(1) from error
 
     print("AutoTube AI está funcionando correctamente.")
-    print("Usa 'autotube doctor' para comprobar el sistema.")
-    print("Usa 'autotube info' para ver la configuración.")
-    print("Usa 'autotube security' para revisar las credenciales.")
-    print("Usa 'autotube gemini-test' para probar Gemini.")
+    print("Usa 'autotube --help' para ver los comandos disponibles.")
 
 
 if __name__ == "__main__":
