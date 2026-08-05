@@ -16,6 +16,10 @@ from autotube.visuals.asset_collector import (
     RecolectorRecursos,
     cargar_plan_visual,
 )
+from autotube.visuals.local_asset_generator import (
+    GeneradorRecursosLocales,
+    cargar_manifiesto_assets,
+)
 from autotube.content.ideas_generator import (
     NICHO_PREDETERMINADO,
     GeneradorIdeas,
@@ -215,6 +219,23 @@ def crear_parser() -> argparse.ArgumentParser:
             "Cantidad máxima de archivos a descargar. "
             "Usa 0 para procesar el plan completo."
         ),
+    )
+
+    local_parser = subcomandos.add_parser(
+        "local-assets",
+        help="Genera gráficos, interfaces y textos localmente.",
+    )
+
+    local_parser.add_argument(
+        "--manifiesto",
+        default=None,
+        help="Manifiesto de recursos. Usa el más reciente por defecto.",
+    )
+
+    local_parser.add_argument(
+        "--forzar",
+        action="store_true",
+        help="Vuelve a generar recursos locales existentes.",
     )
 
     return parser
@@ -642,6 +663,73 @@ def descargar_recursos(argumentos: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def generar_recursos_locales(argumentos: argparse.Namespace) -> None:
+    """Genera recursos gráficos locales para el video."""
+    settings = load_settings()
+
+    archivo = (
+        Path(argumentos.manifiesto)
+        if argumentos.manifiesto
+        else None
+    )
+
+    manifiesto, ruta_manifiesto = cargar_manifiesto_assets(
+        output_dir=settings.output_dir,
+        archivo=archivo,
+    )
+
+    print("\nGENERADOR DE RECURSOS LOCALES")
+    print("=" * 72)
+    print(f"Manifiesto: {ruta_manifiesto}")
+    print(f"Resolución: 1920x1080")
+    print(f"Regenerar existentes: {argumentos.forzar}")
+    print("=" * 72)
+
+    generador = GeneradorRecursosLocales()
+
+    resultado = generador.generar(
+        manifiesto=manifiesto,
+        ruta_manifiesto=ruta_manifiesto,
+        forzar=argumentos.forzar,
+    )
+
+    print("\n" + "=" * 72)
+    print(
+        f"Generados en esta ejecución: "
+        f"{resultado['generados_esta_ejecucion']}"
+    )
+    print(
+        f"Recursos de Pixabay: "
+        f"{resultado['descargados']}"
+    )
+    print(
+        f"Recursos locales totales: "
+        f"{resultado['generados_localmente']}"
+    )
+    print(
+        f"Pendientes: "
+        f"{resultado['pendientes']}"
+    )
+    print(
+        f"Errores: "
+        f"{resultado['errores_totales']}"
+    )
+    print(
+        f"Total disponible: "
+        f"{resultado['descargados'] + resultado['generados_localmente']}"
+        f"/{resultado['total']}"
+    )
+    print(
+        f"Vista previa: "
+        f"{resultado['vista_previa']}"
+    )
+    print(
+        f"Manifiesto actualizado: "
+        f"{resultado['manifiesto']}"
+    )
+    print("=" * 72)
+
+
 def main() -> None:
     parser = crear_parser()
     argumentos = parser.parse_args()
@@ -698,6 +786,10 @@ def main() -> None:
 
         if argumentos.comando == "assets":
             descargar_recursos(argumentos)
+            return
+
+        if argumentos.comando == "local-assets":
+            generar_recursos_locales(argumentos)
             return
 
     except Exception as error:
