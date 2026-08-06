@@ -24,6 +24,10 @@ from autotube.video.composer import (
     CompositorVideo,
     cargar_contexto_render,
 )
+from autotube.video.subtitle_generator import (
+    GeneradorSubtitulos,
+    cargar_audio_para_subtitulos,
+)
 from autotube.content.ideas_generator import (
     NICHO_PREDETERMINADO,
     GeneradorIdeas,
@@ -279,6 +283,31 @@ def crear_parser() -> argparse.ArgumentParser:
         "--conservar-temporales",
         action="store_true",
         help="Conserva los clips intermedios del render.",
+    )
+
+    subtitles_parser = subcomandos.add_parser(
+        "subtitles",
+        help="Genera subtítulos SRT sincronizados con la voz.",
+    )
+
+    subtitles_parser.add_argument(
+        "--audio",
+        default=None,
+        help="Manifiesto de audio. Usa el más reciente por defecto.",
+    )
+
+    subtitles_parser.add_argument(
+        "--max-palabras",
+        type=int,
+        default=12,
+        help="Máximo de palabras por subtítulo.",
+    )
+
+    subtitles_parser.add_argument(
+        "--max-caracteres",
+        type=int,
+        default=74,
+        help="Máximo de caracteres por subtítulo.",
     )
 
     return parser
@@ -853,6 +882,65 @@ def renderizar_video(argumentos: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def generar_subtitulos(argumentos: argparse.Namespace) -> None:
+    """Genera subtítulos sincronizados desde la narración."""
+    settings = load_settings()
+
+    archivo_audio = (
+        Path(argumentos.audio)
+        if argumentos.audio
+        else None
+    )
+
+    manifiesto_audio, ruta_audio = cargar_audio_para_subtitulos(
+        output_dir=settings.output_dir,
+        archivo=archivo_audio,
+    )
+
+    print("\nGENERADOR DE SUBTÍTULOS")
+    print("=" * 72)
+    print(f"Audio: {ruta_audio}")
+    print(f"Máximo de palabras: {argumentos.max_palabras}")
+    print(f"Máximo de caracteres: {argumentos.max_caracteres}")
+    print("=" * 72)
+
+    generador = GeneradorSubtitulos()
+
+    resultado = generador.generar(
+        manifiesto_audio=manifiesto_audio,
+        ruta_audio_manifest=ruta_audio,
+        output_dir=settings.output_dir,
+        max_palabras=argumentos.max_palabras,
+        max_caracteres=argumentos.max_caracteres,
+    )
+
+    minutos = int(
+        resultado["duracion"] // 60
+    )
+
+    segundos = round(
+        resultado["duracion"] % 60,
+        1,
+    )
+
+    print("\n" + "=" * 72)
+    print(f"Subtítulos creados: {resultado['cantidad']}")
+    print(
+        f"Duración cubierta: "
+        f"{minutos} minutos y {segundos} segundos"
+    )
+    print(f"Archivo SRT: {resultado['srt']}")
+    print(
+        f"Transcripción: "
+        f"{resultado['transcripcion']}"
+    )
+    print(
+        f"Manifiesto: "
+        f"{resultado['manifiesto']}"
+    )
+    print("=" * 72)
+
+
 def main() -> None:
     parser = crear_parser()
     argumentos = parser.parse_args()
@@ -917,6 +1005,10 @@ def main() -> None:
 
         if argumentos.comando == "render":
             renderizar_video(argumentos)
+            return
+
+        if argumentos.comando == "subtitles":
+            generar_subtitulos(argumentos)
             return
 
     except Exception as error:
