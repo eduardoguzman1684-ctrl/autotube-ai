@@ -18,3 +18,5 @@ config/credentials*.json
 secrets/
 *.pem
 *.key
+config/youtube/client_secret.json
+config/youtube/token.json
