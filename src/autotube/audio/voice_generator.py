@@ -283,6 +283,19 @@ def normalizar_texto_voz(
         texto,
     )
 
+    reemplazos_pronunciacion = {
+        r"\btutoriales\b": "guías prácticas",
+        r"\btutorial\b": "guía práctica",
+    }
+
+    for patron, pronunciacion in reemplazos_pronunciacion.items():
+        texto = re.sub(
+            patron,
+            pronunciacion,
+            texto,
+            flags=re.IGNORECASE,
+        )
+
     return re.sub(
         r"\s+",
         " ",
