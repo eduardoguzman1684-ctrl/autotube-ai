@@ -283,12 +283,50 @@ def normalizar_texto_voz(
         texto,
     )
 
-    reemplazos_pronunciacion = {
-        r"\btutoriales\b": "guías prácticas",
-        r"\btutorial\b": "guía práctica",
-    }
+    reemplazos_pronunciacion = [
+        (
+            r"este tutorial completo",
+            "esta guía práctica completa",
+        ),
+        (
+            r"este tutorial",
+            "esta guía práctica",
+        ),
+        (
+            r"un tutorial completo",
+            "una guía práctica completa",
+        ),
+        (
+            r"un tutorial",
+            "una guía práctica",
+        ),
+        (
+            r"el tutorial completo",
+            "la guía práctica completa",
+        ),
+        (
+            r"el tutorial",
+            "la guía práctica",
+        ),
+        (
+            r"tutoriales completos",
+            "guías prácticas completas",
+        ),
+        (
+            r"tutorial completo",
+            "guía práctica completa",
+        ),
+        (
+            r"tutoriales",
+            "guías prácticas",
+        ),
+        (
+            r"tutorial",
+            "guía práctica",
+        ),
+    ]
 
-    for patron, pronunciacion in reemplazos_pronunciacion.items():
+    for patron, pronunciacion in reemplazos_pronunciacion:
         texto = re.sub(
             patron,
             pronunciacion,
