@@ -49,6 +49,15 @@ PLAN_VISUAL_SCHEMA: dict[str, Any] = {
                                 "duracion_segundos": {
                                     "type": "number",
                                 },
+                                "texto_narrado": {
+                                    "type": "string",
+                                },
+                                "inicio_segundos": {
+                                    "type": "number",
+                                },
+                                "final_segundos": {
+                                    "type": "number",
+                                },
                                 "tipo_recurso": {
                                     "type": "string",
                                     "enum": [
@@ -78,6 +87,9 @@ PLAN_VISUAL_SCHEMA: dict[str, Any] = {
                             "required": [
                                 "orden",
                                 "duracion_segundos",
+                                "texto_narrado",
+                                "inicio_segundos",
+                                "final_segundos",
                                 "tipo_recurso",
                                 "descripcion",
                                 "busqueda_es",
@@ -256,6 +268,282 @@ def ajustar_duraciones_clips(
     return resultado
 
 
+def crear_bloques_narracion(
+    segmento: dict[str, Any],
+    inicio_global: float,
+    objetivo_segundos: float = 9.5,
+) -> list[dict[str, Any]]:
+    """
+    Divide un segmento de voz en bloques temporales reales.
+
+    Cada bloque representa exactamente la parte de la narraci?n
+    que debe ilustrarse durante ese intervalo.
+    """
+    try:
+        duracion = float(
+            segmento.get(
+                "duracion_real_segundos",
+                0,
+            )
+        )
+    except (TypeError, ValueError):
+        duracion = 0.0
+
+    if duracion <= 0:
+        return []
+
+    marcas_raw = segmento.get(
+        "marcas_palabras",
+        [],
+    )
+
+    marcas: list[dict[str, Any]] = []
+
+    if isinstance(marcas_raw, list):
+        for marca in marcas_raw:
+            if not isinstance(marca, dict):
+                continue
+
+            palabra = str(
+                marca.get("texto", "")
+            ).strip()
+
+            if not palabra:
+                continue
+
+            try:
+                inicio = float(
+                    marca.get(
+                        "inicio_segundos",
+                        0,
+                    )
+                )
+
+                final = float(
+                    marca.get(
+                        "final_segundos",
+                        inicio,
+                    )
+                )
+            except (TypeError, ValueError):
+                continue
+
+            marcas.append(
+                {
+                    "texto": palabra,
+                    "inicio": inicio,
+                    "final": final,
+                }
+            )
+
+    bloques: list[dict[str, Any]] = []
+
+    if marcas:
+        palabras_actuales: list[str] = []
+        inicio_bloque = 0.0
+        ultimo_final = 0.0
+
+        for marca in marcas:
+            palabras_actuales.append(
+                marca["texto"]
+            )
+
+            ultimo_final = min(
+                duracion,
+                max(
+                    ultimo_final,
+                    float(marca["final"]),
+                ),
+            )
+
+            duracion_actual = (
+                ultimo_final
+                - inicio_bloque
+            )
+
+            if duracion_actual >= objetivo_segundos:
+                bloques.append(
+                    {
+                        "orden": len(bloques) + 1,
+                        "inicio_relativo": round(
+                            inicio_bloque,
+                            3,
+                        ),
+                        "final_relativo": round(
+                            ultimo_final,
+                            3,
+                        ),
+                        "inicio_segundos": round(
+                            inicio_global
+                            + inicio_bloque,
+                            3,
+                        ),
+                        "final_segundos": round(
+                            inicio_global
+                            + ultimo_final,
+                            3,
+                        ),
+                        "duracion_segundos": round(
+                            ultimo_final
+                            - inicio_bloque,
+                            3,
+                        ),
+                        "texto_narrado": " ".join(
+                            palabras_actuales
+                        ).strip(),
+                    }
+                )
+
+                palabras_actuales = []
+                inicio_bloque = ultimo_final
+
+        if palabras_actuales:
+            final_bloque = duracion
+
+            bloques.append(
+                {
+                    "orden": len(bloques) + 1,
+                    "inicio_relativo": round(
+                        inicio_bloque,
+                        3,
+                    ),
+                    "final_relativo": round(
+                        final_bloque,
+                        3,
+                    ),
+                    "inicio_segundos": round(
+                        inicio_global
+                        + inicio_bloque,
+                        3,
+                    ),
+                    "final_segundos": round(
+                        inicio_global
+                        + final_bloque,
+                        3,
+                    ),
+                    "duracion_segundos": round(
+                        final_bloque
+                        - inicio_bloque,
+                        3,
+                    ),
+                    "texto_narrado": " ".join(
+                        palabras_actuales
+                    ).strip(),
+                }
+            )
+
+        if bloques:
+            # Garantiza cobertura exacta del segmento.
+            bloques[0]["inicio_relativo"] = 0.0
+            bloques[0]["inicio_segundos"] = round(
+                inicio_global,
+                3,
+            )
+
+            bloques[-1]["final_relativo"] = round(
+                duracion,
+                3,
+            )
+
+            bloques[-1]["final_segundos"] = round(
+                inicio_global + duracion,
+                3,
+            )
+
+            for bloque in bloques:
+                bloque["duracion_segundos"] = round(
+                    bloque["final_segundos"]
+                    - bloque["inicio_segundos"],
+                    3,
+                )
+
+            return bloques
+
+    # --------------------------------------------------------
+    # Respaldo para manifiestos antiguos
+    # --------------------------------------------------------
+    texto = str(
+        segmento.get("texto_voz")
+        or segmento.get("texto")
+        or ""
+    ).strip()
+
+    palabras = texto.split()
+
+    cantidad = max(
+        1,
+        round(
+            duracion / objetivo_segundos
+        ),
+    )
+
+    if not palabras:
+        palabras = [""]
+
+    for indice in range(cantidad):
+        inicio_palabra = round(
+            len(palabras)
+            * indice
+            / cantidad
+        )
+
+        final_palabra = round(
+            len(palabras)
+            * (indice + 1)
+            / cantidad
+        )
+
+        inicio_relativo = (
+            duracion
+            * indice
+            / cantidad
+        )
+
+        final_relativo = (
+            duracion
+            * (indice + 1)
+            / cantidad
+        )
+
+        bloques.append(
+            {
+                "orden": indice + 1,
+                "inicio_relativo": round(
+                    inicio_relativo,
+                    3,
+                ),
+                "final_relativo": round(
+                    final_relativo,
+                    3,
+                ),
+                "inicio_segundos": round(
+                    inicio_global
+                    + inicio_relativo,
+                    3,
+                ),
+                "final_segundos": round(
+                    inicio_global
+                    + final_relativo,
+                    3,
+                ),
+                "duracion_segundos": round(
+                    final_relativo
+                    - inicio_relativo,
+                    3,
+                ),
+                "texto_narrado": " ".join(
+                    palabras[
+                        inicio_palabra:
+                        final_palabra
+                    ]
+                ),
+            }
+        )
+
+    return bloques
+
+
+
 class PlanificadorVisual:
     """Crea un plan visual sincronizado con la narración."""
 
@@ -270,29 +558,14 @@ class PlanificadorVisual:
         guion: dict[str, Any],
         manifiesto: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        """Relaciona cada audio con su texto y sugerencias visuales."""
-        escenas_guion = guion.get("escenas", [])
+        """
+        Construye segmentos visuales a partir del audio real.
 
-        mapa_escenas: dict[int, dict[str, Any]] = {}
-
-        if isinstance(escenas_guion, list):
-            for posicion, escena in enumerate(
-                escenas_guion,
-                start=1,
-            ):
-                if not isinstance(escena, dict):
-                    continue
-
-                try:
-                    numero = int(
-                        escena.get("numero", posicion)
-                    )
-                except (TypeError, ValueError):
-                    numero = posicion
-
-                mapa_escenas[numero] = escena
-
+        Cada segmento contiene bloques de aproximadamente
+        8-12 segundos asociados a texto narrado concreto.
+        """
         contexto: list[dict[str, Any]] = []
+        inicio_global = 0.0
 
         for segmento in manifiesto.get(
             "segmentos",
@@ -302,75 +575,42 @@ class PlanificadorVisual:
                 continue
 
             tipo = str(
-                segmento.get("tipo", "escena")
+                segmento.get(
+                    "tipo",
+                    "escena",
+                )
             )
 
             try:
                 numero = int(
-                    segmento.get("numero", 0)
+                    segmento.get(
+                        "numero",
+                        0,
+                    )
                 )
             except (TypeError, ValueError):
                 numero = 0
 
-            duracion = float(
-                segmento.get(
-                    "duracion_real_segundos",
-                    0,
-                )
-            )
-
-            cantidad_clips = max(
-                2,
-                min(
-                    10,
-                    round(duracion / 10),
-                ),
-            )
-
-            if tipo == "introduccion":
-                texto = str(
-                    guion.get("introduccion", "")
-                )
-
-                sugerencias = []
-                texto_pantalla = ""
-
-            elif tipo == "cta":
-                texto = str(
-                    guion.get("llamada_accion", "")
-                )
-
-                sugerencias = [
-                    "Animación de suscripción",
-                    "Identidad visual del canal Nexo IA",
-                ]
-
-                texto_pantalla = "Suscríbete a Nexo IA"
-
-            else:
-                escena = mapa_escenas.get(
-                    numero,
-                    {},
-                )
-
-                texto = str(
-                    escena.get(
-                        "narracion",
-                        segmento.get("texto", ""),
+            try:
+                duracion = float(
+                    segmento.get(
+                        "duracion_real_segundos",
+                        0,
                     )
                 )
+            except (TypeError, ValueError):
+                duracion = 0.0
 
-                sugerencias = escena.get(
-                    "visuales",
-                    [],
-                )
+            texto = str(
+                segmento.get("texto_voz")
+                or segmento.get("texto")
+                or ""
+            ).strip()
 
-                texto_pantalla = str(
-                    escena.get(
-                        "texto_pantalla",
-                        "",
-                    )
-                )
+            bloques = crear_bloques_narracion(
+                segmento=segmento,
+                inicio_global=inicio_global,
+            )
 
             contexto.append(
                 {
@@ -378,15 +618,22 @@ class PlanificadorVisual:
                     "numero": numero,
                     "titulo": segmento.get(
                         "titulo",
-                        "Sin título",
+                        "Sin t?tulo",
+                    ),
+                    "inicio_segmento_segundos": round(
+                        inicio_global,
+                        3,
                     ),
                     "duracion_audio_segundos": duracion,
-                    "cantidad_clips_recomendada": cantidad_clips,
+                    "cantidad_clips_recomendada": len(
+                        bloques
+                    ),
                     "narracion": texto,
-                    "visuales_originales": sugerencias,
-                    "texto_pantalla_original": texto_pantalla,
+                    "bloques_narracion": bloques,
                 }
             )
+
+            inicio_global += duracion
 
         return contexto
 
@@ -410,39 +657,53 @@ class PlanificadorVisual:
         )
 
         prompt = f"""
-Actúa como director audiovisual y editor profesional de videos
-educativos para YouTube.
+Act?a como director audiovisual y editor profesional de videos
+educativos para YouTube del canal NEXON IA.
 
-Debes crear el plan visual completo para el siguiente video del canal
-Nexo IA.
+T?TULO:
+{guion.get("titulo", "Sin t?tulo")}
 
-TÍTULO:
-{guion.get("titulo", "Sin título")}
-
-SEGMENTOS SINCRONIZADOS CON EL AUDIO:
+SEGMENTOS Y BLOQUES TEMPORIZADOS CON EL AUDIO REAL:
 {contexto_json}
 
 INSTRUCCIONES OBLIGATORIAS:
 
-1. Conserva exactamente el mismo número y orden de segmentos.
-2. Usa la duración real de audio indicada para cada segmento.
-3. Crea aproximadamente la cantidad de clips recomendada.
-4. Cada clip debe representar una parte específica de la narración.
-5. Alterna videos de archivo, imágenes, gráficos, texto animado y
-   capturas de interfaz cuando sea apropiado.
-6. Evita mantener una sola imagen demasiado tiempo.
-7. Las búsquedas en español e inglés deben ser breves y concretas.
-8. Para herramientas digitales, prioriza capturas genéricas de interfaz
-   y no inventes botones o funciones.
-9. No uses marcas registradas como decoración sin relación con el tema.
-10. No propongas descargar contenido protegido de otros canales.
-11. En el campo movimiento indica acciones como:
-    zoom lento, paneo horizontal, acercamiento, desplazamiento vertical,
-    corte directo o sin movimiento.
-12. El texto en pantalla debe ser corto. Puede quedar vacío cuando no
-    sea necesario.
-13. El resultado debe ser apropiado para video horizontal 1920x1080.
-14. Devuelve exclusivamente el JSON solicitado.
+1. Conserva exactamente el mismo n?mero y orden de segmentos.
+2. Cada segmento contiene "bloques_narracion" ya sincronizados.
+3. Debes devolver EXACTAMENTE UN clip por cada bloque_narracion.
+4. El clip debe ilustrar ?nicamente el texto_narrado de ese bloque.
+5. Copia exactamente en cada clip:
+   - texto_narrado
+   - inicio_segundos
+   - final_segundos
+   - duracion_segundos
+6. No combines frases pertenecientes a bloques diferentes.
+7. Si el texto habla de Make, ChatGPT, OpenAI, Gmail, una API,
+   m?dulos, escenarios, prompts, botones, formularios o paneles,
+   prioriza "captura_interfaz" o "grafico".
+8. Usa "video_stock" e "imagen_stock" principalmente para conceptos
+   f?sicos, personas, oficinas, productividad, tiempo, negocios,
+   servidores u otras escenas que realmente existan como B-roll.
+9. No uses una persona mirando una computadora como sustituto
+   gen?rico cuando la narraci?n describe una acci?n espec?fica
+   dentro de un software.
+10. Las b?squedas de stock deben describir exactamente el concepto
+    visual del bloque. Usa entre 3 y 7 palabras clave concretas.
+11. Evita b?squedas gen?ricas como:
+    technology, artificial intelligence, computer, business.
+12. Para busqueda_en usa t?rminos naturales en ingl?s adecuados
+    para bancos de im?genes o videos.
+13. Para busqueda_es usa t?rminos concretos equivalentes en espa?ol.
+14. No repitas la misma descripci?n o b?squeda en clips consecutivos.
+15. Alterna recursos solo cuando tenga sentido para la narraci?n.
+16. Para herramientas digitales no inventes caracter?sticas o
+    botones inexistentes; las capturas locales son ilustrativas.
+17. movimiento puede ser:
+    zoom lento, paneo horizontal, acercamiento,
+    desplazamiento vertical, corte directo o sin movimiento.
+18. texto_pantalla debe ser breve y solo cuando a?ada valor.
+19. El resultado es horizontal 1920x1080.
+20. Devuelve exclusivamente el JSON solicitado.
 """.strip()
 
         resultado = self.cliente.generar_json(
@@ -495,9 +756,144 @@ INSTRUCCIONES OBLIGATORIAS:
             generado["numero"] = original["numero"]
             generado["titulo"] = original["titulo"]
             generado["duracion_audio_segundos"] = duracion
-            generado["clips"] = ajustar_duraciones_clips(
-                clips=clips,
-                duracion_total=duracion,
+            bloques = original.get(
+                "bloques_narracion",
+                [],
+            )
+
+            clips_alineados: list[
+                dict[str, Any]
+            ] = []
+
+            claves_interfaz = (
+                "make",
+                "chatgpt",
+                "openai",
+                "gmail",
+                "google sheets",
+                "notion",
+                "panel",
+                "bot?n",
+                "boton",
+                "escenario",
+                "m?dulo",
+                "modulo",
+                "trigger",
+                "disparador",
+                "formulario",
+                "interfaz",
+                "cuenta",
+                "prompt",
+            )
+
+            for indice, bloque in enumerate(
+                bloques,
+            ):
+                if indice < len(clips):
+                    clip = dict(
+                        clips[indice]
+                    )
+                else:
+                    clip = {}
+
+                texto_narrado = str(
+                    bloque.get(
+                        "texto_narrado",
+                        "",
+                    )
+                )
+
+                texto_minusculas = (
+                    texto_narrado.lower()
+                )
+
+                tipo_recurso = str(
+                    clip.get(
+                        "tipo_recurso",
+                        "grafico",
+                    )
+                )
+
+                if any(
+                    clave in texto_minusculas
+                    for clave in claves_interfaz
+                ):
+                    tipo_recurso = (
+                        "captura_interfaz"
+                    )
+
+                clip["orden"] = indice + 1
+
+                clip["duracion_segundos"] = round(
+                    float(
+                        bloque.get(
+                            "duracion_segundos",
+                            1,
+                        )
+                    ),
+                    3,
+                )
+
+                clip["texto_narrado"] = (
+                    texto_narrado
+                )
+
+                clip["inicio_segundos"] = float(
+                    bloque.get(
+                        "inicio_segundos",
+                        0,
+                    )
+                )
+
+                clip["final_segundos"] = float(
+                    bloque.get(
+                        "final_segundos",
+                        0,
+                    )
+                )
+
+                clip["tipo_recurso"] = (
+                    tipo_recurso
+                )
+
+                if not str(
+                    clip.get(
+                        "descripcion",
+                        "",
+                    )
+                ).strip():
+                    clip["descripcion"] = (
+                        "Representaci?n visual "
+                        "espec?fica de: "
+                        + texto_narrado
+                    )
+
+                clip.setdefault(
+                    "busqueda_es",
+                    "",
+                )
+
+                clip.setdefault(
+                    "busqueda_en",
+                    "",
+                )
+
+                clip.setdefault(
+                    "movimiento",
+                    "zoom lento",
+                )
+
+                clip.setdefault(
+                    "texto_pantalla",
+                    "",
+                )
+
+                clips_alineados.append(
+                    clip
+                )
+
+            generado["clips"] = (
+                clips_alineados
             )
 
             segmentos_finales.append(generado)

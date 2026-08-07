@@ -209,7 +209,12 @@ class GeneradorSubtitulos:
         max_palabras: int = 12,
         max_caracteres: int = 74,
     ) -> list[dict[str, Any]]:
-        """Calcula los tiempos de cada bloque de subtítulos."""
+        """
+        Crea subt?tulos usando WordBoundary reales.
+
+        Si un manifiesto antiguo no contiene marcas de palabras,
+        conserva el m?todo proporcional como respaldo.
+        """
         segmentos = manifiesto_audio.get(
             "segmentos",
             [],
@@ -231,23 +236,24 @@ class GeneradorSubtitulos:
             )
 
             try:
-                duracion = float(
+                duracion_segmento = float(
                     segmento.get(
                         "duracion_real_segundos",
                         0,
                     )
                 )
             except (TypeError, ValueError):
-                duracion = 0.0
+                duracion_segmento = 0.0
 
             inicio_segmento = tiempo_acumulado
             final_segmento = (
-                inicio_segmento + duracion
+                inicio_segmento
+                + duracion_segmento
             )
 
             tiempo_acumulado = final_segmento
 
-            if not texto or duracion <= 0:
+            if not texto or duracion_segmento <= 0:
                 continue
 
             bloques = dividir_texto_subtitulos(
@@ -259,6 +265,122 @@ class GeneradorSubtitulos:
             if not bloques:
                 continue
 
+            marcas_raw = segmento.get(
+                "marcas_palabras",
+                [],
+            )
+
+            marcas: list[dict[str, Any]] = []
+
+            if isinstance(marcas_raw, list):
+                for marca in marcas_raw:
+                    if not isinstance(marca, dict):
+                        continue
+
+                    try:
+                        inicio_palabra = float(
+                            marca.get(
+                                "inicio_segundos",
+                                0,
+                            )
+                        )
+
+                        final_palabra = float(
+                            marca.get(
+                                "final_segundos",
+                                inicio_palabra,
+                            )
+                        )
+                    except (TypeError, ValueError):
+                        continue
+
+                    marcas.append(
+                        {
+                            "inicio": inicio_palabra,
+                            "final": final_palabra,
+                        }
+                    )
+
+            # ------------------------------------------------
+            # M?todo nuevo: tiempos reales de Edge TTS
+            # ------------------------------------------------
+            if marcas:
+                cursor = 0
+
+                for posicion, bloque in enumerate(
+                    bloques,
+                    start=1,
+                ):
+                    if cursor >= len(marcas):
+                        break
+
+                    cantidad = max(
+                        1,
+                        contar_palabras_texto(
+                            bloque
+                        ),
+                    )
+
+                    indice_final = min(
+                        len(marcas) - 1,
+                        cursor + cantidad - 1,
+                    )
+
+                    if posicion == len(bloques):
+                        indice_final = (
+                            len(marcas) - 1
+                        )
+
+                    inicio_actual = (
+                        inicio_segmento
+                        + marcas[cursor]["inicio"]
+                    )
+
+                    final_actual = (
+                        inicio_segmento
+                        + marcas[indice_final]["final"]
+                    )
+
+                    # Evita tiempos inv?lidos.
+                    final_actual = min(
+                        final_actual,
+                        final_segmento,
+                    )
+
+                    if final_actual <= inicio_actual:
+                        final_actual = min(
+                            final_segmento,
+                            inicio_actual + 0.5,
+                        )
+
+                    eventos.append(
+                        {
+                            "inicio_segundos": round(
+                                inicio_actual,
+                                3,
+                            ),
+                            "final_segundos": round(
+                                final_actual,
+                                3,
+                            ),
+                            "texto": bloque,
+                            "segmento": segmento.get(
+                                "titulo",
+                                "",
+                            ),
+                            "sincronizacion": (
+                                "edge_word_boundary"
+                            ),
+                        }
+                    )
+
+                    cursor = indice_final + 1
+
+                continue
+
+            # ------------------------------------------------
+            # Respaldo para audios antiguos sin WordBoundary
+            # ------------------------------------------------
             pesos = [
                 max(
                     1,
@@ -271,6 +393,7 @@ class GeneradorSubtitulos:
 
             suma_pesos = sum(pesos)
             inicio_actual = inicio_segmento
+            duracion_restante = duracion_segmento
 
             for posicion, (
                 bloque,
@@ -287,7 +410,8 @@ class GeneradorSubtitulos:
                     )
 
                     duracion_bloque = (
-                        duracion * proporcion
+                        duracion_restante
+                        * proporcion
                     )
 
                     final_actual = (
@@ -296,7 +420,7 @@ class GeneradorSubtitulos:
                     )
 
                     suma_pesos -= peso
-                    duracion = (
+                    duracion_restante = (
                         final_segmento
                         - final_actual
                     )
@@ -316,6 +440,7 @@ class GeneradorSubtitulos:
                             "titulo",
                             "",
                         ),
+                        "sincronizacion": "proporcional",
                     }
                 )
 

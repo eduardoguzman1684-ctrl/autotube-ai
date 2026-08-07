@@ -525,8 +525,12 @@ class GeneradorVoz:
         self,
         texto: str,
         destino: Path,
-    ) -> None:
-        """Genera un archivo MP3 con reintentos."""
+    ) -> list[dict[str, Any]]:
+        """
+        Genera MP3 y captura WordBoundary reales de Edge TTS.
+
+        Los tiempos se guardan relativos al inicio del segmento.
+        """
         ultimo_error: Exception | None = None
 
         for intento in range(1, self.intentos + 1):
@@ -539,10 +543,73 @@ class GeneradorVoz:
                     rate=self.velocidad,
                     pitch=self.tono,
                     volume=self.volumen,
+                    boundary="WordBoundary",
                 )
 
-                await asyncio.wait_for(
-                    comunicador.save(str(destino)),
+                async def descargar() -> list[dict[str, Any]]:
+                    marcas: list[dict[str, Any]] = []
+
+                    with destino.open("wb") as salida:
+                        async for evento in comunicador.stream():
+                            tipo = evento.get("type")
+
+                            if tipo == "audio":
+                                datos = evento.get("data")
+
+                                if datos:
+                                    salida.write(datos)
+
+                            elif tipo == "WordBoundary":
+                                try:
+                                    offset = float(
+                                        evento.get("offset", 0)
+                                    )
+                                    duracion = float(
+                                        evento.get("duration", 0)
+                                    )
+                                except (TypeError, ValueError):
+                                    continue
+
+                                inicio_segundos = (
+                                    offset / 10_000_000
+                                )
+
+                                duracion_segundos = (
+                                    duracion / 10_000_000
+                                )
+
+                                final_segundos = (
+                                    inicio_segundos
+                                    + duracion_segundos
+                                )
+
+                                palabra = str(
+                                    evento.get("text", "")
+                                ).strip()
+
+                                if palabra:
+                                    marcas.append(
+                                        {
+                                            "texto": palabra,
+                                            "inicio_segundos": round(
+                                                inicio_segundos,
+                                                4,
+                                            ),
+                                            "duracion_segundos": round(
+                                                duracion_segundos,
+                                                4,
+                                            ),
+                                            "final_segundos": round(
+                                                final_segundos,
+                                                4,
+                                            ),
+                                        }
+                                    )
+
+                    return marcas
+
+                marcas = await asyncio.wait_for(
+                    descargar(),
                     timeout=TIEMPO_MAXIMO_SEGMENTO,
                 )
 
@@ -551,17 +618,25 @@ class GeneradorVoz:
                     or destino.stat().st_size == 0
                 ):
                     raise RuntimeError(
-                        "Edge TTS no generó un archivo válido."
+                        "Edge TTS no gener? un archivo v?lido."
+                    )
+
+                if not marcas:
+                    logger.warning(
+                        "Edge TTS no devolvi? WordBoundary "
+                        "para el segmento."
                     )
 
                 await asyncio.sleep(
                     PAUSA_ENTRE_SEGMENTOS
                 )
 
-                return
+                return marcas
 
             except Exception as error:
                 ultimo_error = error
+
+                destino.unlink(missing_ok=True)
 
                 if intento >= self.intentos:
                     break
@@ -694,7 +769,7 @@ class GeneradorVoz:
                 )
             )
 
-            await self.generar_segmento(
+            marcas_palabras = await self.generar_segmento(
                 texto=texto_voz_normalizado,
                 destino=archivo,
             )
@@ -711,6 +786,7 @@ class GeneradorVoz:
                     "texto_voz": texto_voz_normalizado,
                     "archivo": archivo.name,
                     "duracion_real_segundos": duracion,
+                    "marcas_palabras": marcas_palabras,
                 }
             )
 
