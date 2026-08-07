@@ -1091,10 +1091,8 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
                     "voice",
                     "--voz",
                     argumentos.voz,
-                    "--velocidad",
-                    argumentos.velocidad,
-                    "--tono",
-                    argumentos.tono,
+                    f"--velocidad={argumentos.velocidad}",
+                    f"--tono={argumentos.tono}",
                 ],
             ),
             (
