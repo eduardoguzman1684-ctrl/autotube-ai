@@ -310,6 +310,57 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Máximo de caracteres por subtítulo.",
     )
 
+
+    run_parser = subcomandos.add_parser(
+        "run",
+        help="Ejecuta autom?ticamente el pipeline completo de producci?n.",
+    )
+
+    run_parser.add_argument(
+        "--nicho",
+        default=NICHO_PREDETERMINADO,
+        help="Nicho o tema general para generar las ideas.",
+    )
+
+    run_parser.add_argument(
+        "--cantidad-ideas",
+        type=int,
+        default=5,
+        help="Cantidad de ideas iniciales que generar? Gemini.",
+    )
+
+    run_parser.add_argument(
+        "--indice",
+        type=int,
+        default=1,
+        help="Idea que se utilizar? para producir el video.",
+    )
+
+    run_parser.add_argument(
+        "--voz",
+        default="es-MX-JorgeNeural",
+        help="Voz utilizada por Edge TTS.",
+    )
+
+    run_parser.add_argument(
+        "--velocidad",
+        default="-4%",
+        help="Velocidad de narraci?n.",
+    )
+
+    run_parser.add_argument(
+        "--tono",
+        default="-2Hz",
+        help="Tono de narraci?n.",
+    )
+
+    run_parser.add_argument(
+        "--omitir-doctor",
+        action="store_true",
+        help="No ejecuta la comprobaci?n inicial del proyecto.",
+    )
+
+
     return parser
 
 
@@ -941,6 +992,182 @@ def generar_subtitulos(argumentos: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+
+
+def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
+    """Ejecuta de principio a fin la producci?n autom?tica del video."""
+
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parents[2]
+
+    autotube_exe = shutil.which("autotube")
+
+    if autotube_exe:
+        base_command = [autotube_exe]
+    else:
+        base_command = [
+            sys.executable,
+            "-c",
+            "from autotube.main import main; main()",
+        ]
+
+    def ejecutar_paso(
+        numero: int,
+        total: int,
+        nombre: str,
+        parametros: list[str],
+    ) -> None:
+        print()
+        print("=" * 72)
+        print(f"PASO {numero}/{total}: {nombre}")
+        print("=" * 72)
+
+        comando = base_command + parametros
+
+        print(
+            "Comando:",
+            " ".join(str(parte) for parte in comando),
+        )
+
+        subprocess.run(
+            comando,
+            cwd=project_root,
+            check=True,
+        )
+
+    pasos: list[tuple[str, list[str]]] = []
+
+    if not argumentos.omitir_doctor:
+        pasos.append(
+            (
+                "Comprobaci?n del proyecto",
+                ["doctor"],
+            )
+        )
+
+    pasos.extend(
+        [
+            (
+                "Generaci?n de ideas",
+                [
+                    "ideas",
+                    "--nicho",
+                    argumentos.nicho,
+                    "--cantidad",
+                    str(argumentos.cantidad_ideas),
+                ],
+            ),
+            (
+                "Generaci?n del guion",
+                [
+                    "script",
+                    "--indice",
+                    str(argumentos.indice),
+                ],
+            ),
+            (
+                "Correcci?n y expansi?n del guion",
+                [
+                    "script-fix",
+                    "--ppm",
+                    "145",
+                ],
+            ),
+            (
+                "Validaci?n del guion corregido",
+                [
+                    "script-check",
+                    "--ppm",
+                    "145",
+                ],
+            ),
+            (
+                "Generaci?n de narraci?n",
+                [
+                    "voice",
+                    "--voz",
+                    argumentos.voz,
+                    "--velocidad",
+                    argumentos.velocidad,
+                    "--tono",
+                    argumentos.tono,
+                ],
+            ),
+            (
+                "Creaci?n del plan visual",
+                [
+                    "visual-plan",
+                ],
+            ),
+            (
+                "Descarga de recursos",
+                [
+                    "assets",
+                    "--limite",
+                    "0",
+                ],
+            ),
+            (
+                "Generaci?n de recursos locales",
+                [
+                    "local-assets",
+                ],
+            ),
+            (
+                "Renderizado del video",
+                [
+                    "render",
+                ],
+            ),
+            (
+                "Generaci?n de subt?tulos",
+                [
+                    "subtitles",
+                ],
+            ),
+        ]
+    )
+
+    total = len(pasos)
+
+    print()
+    print("#" * 72)
+    print("NEXON IA - PRODUCCI?N AUTOM?TICA")
+    print("#" * 72)
+    print("Nicho:", argumentos.nicho)
+    print("Idea seleccionada:", argumentos.indice)
+    print("Pasos:", total)
+
+    for numero, (nombre, parametros) in enumerate(
+        pasos,
+        start=1,
+    ):
+        ejecutar_paso(
+            numero,
+            total,
+            nombre,
+            parametros,
+        )
+
+    print()
+    print("#" * 72)
+    print("PIPELINE DE PRODUCCI?N COMPLETADO")
+    print("#" * 72)
+    print(
+        "Video, narraci?n, recursos y subt?tulos "
+        "han sido generados."
+    )
+    print(
+        "El siguiente m?dulo a?adir? m?sica, "
+        "miniatura y publicaci?n en YouTube."
+    )
+
+
+
 def main() -> None:
     parser = crear_parser()
     argumentos = parser.parse_args()
@@ -955,6 +1182,11 @@ def main() -> None:
     )
 
     try:
+
+        if argumentos.comando == "run":
+            ejecutar_pipeline(argumentos)
+            return
+
         if argumentos.comando == "doctor":
             correcto = ejecutar_diagnostico()
             raise SystemExit(0 if correcto else 1)
