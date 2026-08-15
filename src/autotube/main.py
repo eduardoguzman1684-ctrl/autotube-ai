@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 from pathlib import Path
@@ -28,6 +28,9 @@ from autotube.video.subtitle_generator import (
     GeneradorSubtitulos,
     cargar_audio_para_subtitulos,
 )
+from autotube.video.finalizer import FinalizadorVideo
+from autotube.content.youtube_metadata import GeneradorMetadataYouTube
+from autotube.content.thumbnail_generator import GeneradorMiniaturaYouTube
 from autotube.visuals.tutorial_capture import (
     CapturadorTutorial,
     cargar_manifiesto_tutorial,
@@ -362,6 +365,13 @@ def crear_parser() -> argparse.ArgumentParser:
         "--omitir-doctor",
         action="store_true",
         help="No ejecuta la comprobaci?n inicial del proyecto.",
+    )
+
+
+    run_parser.add_argument(
+        "--sin-publicar",
+        action="store_true",
+        help="Completa el video pero no lo sube a YouTube.",
     )
 
 
@@ -1228,6 +1238,58 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
             parametros,
         )
 
+
+    print()
+    print("=" * 72)
+    print("ETAPA FINAL AUTOMATICA")
+    print("=" * 72)
+
+    print("1/4 Finalizando video con subtitulos y musica...")
+    finalizador = FinalizadorVideo(
+        project_root=project_root,
+    )
+    video_final, video_generado = finalizador.finalizar()
+    print(
+        "Video final:",
+        video_final,
+        "|",
+        "GENERADO" if video_generado else "REUTILIZADO",
+    )
+
+    print("2/4 Generando metadata y capitulos de YouTube...")
+    generador_metadata = GeneradorMetadataYouTube(
+        project_root=project_root,
+    )
+    metadata, metadata_path = generador_metadata.generar()
+    print("Titulo:", metadata["title"])
+    print("Metadata:", metadata_path)
+
+    print("3/4 Generando miniatura automatica...")
+    generador_miniatura = GeneradorMiniaturaYouTube(
+        project_root=project_root,
+    )
+    miniatura, miniatura_generada = generador_miniatura.generar()
+    print(
+        "Miniatura:",
+        miniatura,
+        "|",
+        "GENERADA" if miniatura_generada else "REUTILIZADA",
+    )
+
+    if argumentos.sin_publicar:
+        print("4/4 YouTube omitido por --sin-publicar.")
+    else:
+        print("4/4 Publicando en YouTube como PRIVADO...")
+        publicador = project_root / "tools" / "youtube_publish_all.py"
+        subprocess.run(
+            [
+                sys.executable,
+                str(publicador),
+            ],
+            cwd=project_root,
+            check=True,
+        )
+
     print()
     print("#" * 72)
     print("PIPELINE DE PRODUCCI?N COMPLETADO")
@@ -1236,10 +1298,11 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
         "Video, narraci?n, recursos y subt?tulos "
         "han sido generados."
     )
-    print(
-        "El siguiente m?dulo a?adir? m?sica, "
-        "miniatura y publicaci?n en YouTube."
-    )
+    print("Produccion final automatica completada.")
+    if argumentos.sin_publicar:
+        print("YouTube: OMITIDO por --sin-publicar")
+    else:
+        print("YouTube: video subido en PRIVADO para revision.")
 
 
 
