@@ -782,6 +782,38 @@ class RecolectorRecursos:
                         "texto_pantalla",
                         "",
                     ),
+                    "texto_narrado": clip.get(
+                        "texto_narrado",
+                        "",
+                    ),
+                    "inicio_segundos": clip.get(
+                        "inicio_segundos",
+                        0,
+                    ),
+                    "final_segundos": clip.get(
+                        "final_segundos",
+                        0,
+                    ),
+                    "plataforma": clip.get(
+                        "plataforma",
+                        "",
+                    ),
+                    "url_oficial": clip.get(
+                        "url_oficial",
+                        "",
+                    ),
+                    "pantalla_objetivo": clip.get(
+                        "pantalla_objetivo",
+                        "",
+                    ),
+                    "accion_visual": clip.get(
+                        "accion_visual",
+                        "",
+                    ),
+                    "requiere_login": clip.get(
+                        "requiere_login",
+                        False,
+                    ),
                 }
 
                 if tipo not in TIPOS_PIXABAY:

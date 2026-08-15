@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 from pathlib import Path
@@ -27,6 +27,10 @@ from autotube.video.composer import (
 from autotube.video.subtitle_generator import (
     GeneradorSubtitulos,
     cargar_audio_para_subtitulos,
+)
+from autotube.visuals.tutorial_capture import (
+    CapturadorTutorial,
+    cargar_manifiesto_tutorial,
 )
 from autotube.content.ideas_generator import (
     NICHO_PREDETERMINADO,
@@ -361,6 +365,51 @@ def crear_parser() -> argparse.ArgumentParser:
     )
 
 
+    tutorial_parser = subcomandos.add_parser(
+        "tutorial-capture",
+        help="Captura interfaces web reales para tutoriales.",
+    )
+
+    tutorial_parser.add_argument(
+        "--manifiesto",
+        default=None,
+    )
+
+    tutorial_parser.add_argument(
+        "--login",
+        default=None,
+        choices=[
+            "make",
+            "chatgpt",
+            "openai",
+            "gmail",
+            "n8n",
+            "supabase",
+            "notion",
+            "claude",
+            "cursor",
+            "v0",
+            "heygen",
+            "elevenlabs",
+        ],
+    )
+
+    tutorial_parser.add_argument(
+        "--forzar",
+        action="store_true",
+    )
+
+    tutorial_parser.add_argument(
+        "--limite",
+        type=int,
+        default=0,
+    )
+
+    tutorial_parser.add_argument(
+        "--mostrar-navegador",
+        action="store_true",
+    )
+
     return parser
 
 
@@ -428,6 +477,7 @@ def generar_ideas(argumentos: argparse.Namespace) -> None:
         nicho=argumentos.nicho,
         cantidad=argumentos.cantidad,
         idioma=argumentos.idioma,
+        data_dir=settings.data_dir,
     )
 
     ruta = generador.guardar(
@@ -445,6 +495,33 @@ def generar_ideas(argumentos: argparse.Namespace) -> None:
         print(f"   Potencial: {idea['potencial']}")
         print(f"   Gancho: {idea['gancho']}")
         print(f"   Ángulo: {idea['angulo']}")
+
+    rechazadas = resultado.get(
+        "ideas_rechazadas",
+        [],
+    )
+
+    if rechazadas:
+        print("\nIDEAS RECHAZADAS POR SIMILITUD")
+
+        for rechazada in rechazadas:
+            print(
+                f"- {rechazada['titulo']} "
+                f"({rechazada['similitud']}%)"
+            )
+
+            print(
+                "  Similar a: "
+                f"{rechazada['comparado_con']}"
+            )
+
+            for motivo in rechazada.get(
+                "motivos",
+                [],
+            ):
+                print(
+                    f"  - {motivo}"
+                )
 
     print("\n" + "=" * 70)
     print(f"Modelo utilizado: {resultado['modelo']}")
@@ -1166,6 +1243,41 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
 
 
 
+def capturar_tutorial(argumentos: argparse.Namespace) -> None:
+    settings = load_settings()
+
+    capturador = CapturadorTutorial(
+        project_root=settings.project_root,
+    )
+
+    if argumentos.login:
+        capturador.abrir_sesion(argumentos.login)
+        return
+
+    archivo = (
+        Path(argumentos.manifiesto)
+        if argumentos.manifiesto
+        else None
+    )
+
+    manifiesto, ruta = cargar_manifiesto_tutorial(
+        output_dir=settings.output_dir,
+        archivo=archivo,
+    )
+
+    resultado = capturador.capturar(
+        manifiesto=manifiesto,
+        ruta_manifiesto=ruta,
+        forzar=argumentos.forzar,
+        limite=argumentos.limite,
+        mostrar_navegador=argumentos.mostrar_navegador,
+    )
+
+    print("Capturas reales:", resultado["capturadas"])
+    print("Errores:", resultado["errores"])
+    print("Pendientes:", resultado["pendientes"])
+
+
 def main() -> None:
     parser = crear_parser()
     argumentos = parser.parse_args()
@@ -1231,6 +1343,10 @@ def main() -> None:
 
         if argumentos.comando == "local-assets":
             generar_recursos_locales(argumentos)
+            return
+
+        if argumentos.comando == "tutorial-capture":
+            capturar_tutorial(argumentos)
             return
 
         if argumentos.comando == "render":

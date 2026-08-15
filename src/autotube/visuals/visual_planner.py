@@ -64,6 +64,7 @@ PLAN_VISUAL_SCHEMA: dict[str, Any] = {
                                         "video_stock",
                                         "imagen_stock",
                                         "captura_interfaz",
+                                        "captura_web_real",
                                         "grafico",
                                         "texto_animado",
                                     ],
@@ -76,6 +77,21 @@ PLAN_VISUAL_SCHEMA: dict[str, Any] = {
                                 },
                                 "busqueda_en": {
                                     "type": "string",
+                                },
+                                "plataforma": {
+                                    "type": "string",
+                                },
+                                "url_oficial": {
+                                    "type": "string",
+                                },
+                                "pantalla_objetivo": {
+                                    "type": "string",
+                                },
+                                "accion_visual": {
+                                    "type": "string",
+                                },
+                                "requiere_login": {
+                                    "type": "boolean",
                                 },
                                 "movimiento": {
                                     "type": "string",
@@ -678,9 +694,36 @@ INSTRUCCIONES OBLIGATORIAS:
    - final_segundos
    - duracion_segundos
 6. No combines frases pertenecientes a bloques diferentes.
-7. Si el texto habla de Make, ChatGPT, OpenAI, Gmail, una API,
-   m?dulos, escenarios, prompts, botones, formularios o paneles,
-   prioriza "captura_interfaz" o "grafico".
+7. Si el texto describe una plataforma digital real como Make,
+   ChatGPT, OpenAI, Gmail, n8n, Supabase, Notion, Claude, Cursor,
+   v0, HeyGen o ElevenLabs, y la narraci?n explica qu? pantalla
+   abrir o qu? acci?n realizar, usa "captura_web_real".
+
+   En esos clips completa:
+   - plataforma: nombre exacto de la plataforma;
+   - pantalla_objetivo: pantalla que debe verse;
+   - accion_visual: acci?n que se explica;
+   - url_oficial: URL oficial ?nicamente si la conoces con certeza;
+   - requiere_login: true solo si esa pantalla necesita sesi?n.
+
+   Ejemplos:
+   "entra al sitio de Make"
+   -> captura_web_real / Make / p?gina oficial.
+
+   "reg?strate en Make"
+   -> captura_web_real / Make / p?gina de registro.
+
+   "crea un nuevo escenario"
+   -> captura_web_real / Make / panel de escenarios / requiere_login true.
+
+   "abre ChatGPT"
+   -> captura_web_real / ChatGPT / interfaz principal.
+
+   "abre la plataforma de OpenAI para usar la API"
+   -> captura_web_real / OpenAI / plataforma o documentaci?n de API.
+
+   No sustituyas una acci?n concreta de software por una persona
+   mirando una computadora.
 8. Usa "video_stock" e "imagen_stock" principalmente para conceptos
    f?sicos, personas, oficinas, productividad, tiempo, negocios,
    servidores u otras escenas que realmente existan como B-roll.
@@ -819,7 +862,7 @@ INSTRUCCIONES OBLIGATORIAS:
                     for clave in claves_interfaz
                 ):
                     tipo_recurso = (
-                        "captura_interfaz"
+                        "captura_web_real"
                     )
 
                 clip["orden"] = indice + 1
@@ -854,6 +897,31 @@ INSTRUCCIONES OBLIGATORIAS:
 
                 clip["tipo_recurso"] = (
                     tipo_recurso
+                )
+
+                clip.setdefault(
+                    "plataforma",
+                    "",
+                )
+
+                clip.setdefault(
+                    "url_oficial",
+                    "",
+                )
+
+                clip.setdefault(
+                    "pantalla_objetivo",
+                    "",
+                )
+
+                clip.setdefault(
+                    "accion_visual",
+                    "",
+                )
+
+                clip.setdefault(
+                    "requiere_login",
+                    False,
                 )
 
                 if not str(

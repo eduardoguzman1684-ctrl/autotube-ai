@@ -20,3 +20,5 @@ secrets/
 *.key
 config/youtube/client_secret.json
 config/youtube/token.json
+config/browser_profile/
+config/edge_tutorial_profile/
