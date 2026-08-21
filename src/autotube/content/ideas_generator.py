@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from autotube.ai.gemini_client import GeminiClient
+from autotube.content.youtube_trends import (
+    InvestigadorTendenciasYouTube,
+    ordenar_ideas_por_tendencia,
+    tendencias_para_prompt,
+)
 
 
 NICHO_PREDETERMINADO = (
@@ -703,6 +708,8 @@ class GeneradorIdeas:
         cantidad: int = 5,
         idioma: str = "espanol",
         data_dir: Path | None = None,
+        youtube_api_key: str | None = None,
+        region_tendencias: str = "MX",
     ) -> dict[str, Any]:
         """Genera ideas nuevas evitando temas ya producidos."""
         nicho_limpio = nicho.strip()
@@ -742,6 +749,26 @@ class GeneradorIdeas:
             ),
         )
 
+        investigador_tendencias = (
+            InvestigadorTendenciasYouTube(
+                youtube_api_key
+            )
+        )
+
+        investigacion_tendencias = (
+            investigador_tendencias.investigar(
+                nicho=nicho_limpio,
+                region=region_tendencias,
+                idioma="es",
+                dias=21,
+                max_resultados=25,
+            )
+        )
+
+        contexto_tendencias = tendencias_para_prompt(
+            investigacion_tendencias
+        )
+
         prompt = f"""
 Actua como director editorial y estratega de documentales para YouTube.
 
@@ -759,6 +786,9 @@ documentales originales sobre inteligencia artificial.
 
 VIDEOS O GUIONES YA SELECCIONADOS:
 {historial_prompt}
+
+INVESTIGACION DE DEMANDA RECIENTE:
+{contexto_tendencias}
 
 OBJETIVO EDITORIAL:
 
@@ -810,9 +840,14 @@ REGLAS:
 4. Prioriza relevancia, curiosidad, utilidad publica y retencion.
 5. No inventes noticias, estudios, estadisticas ni avances.
 6. Ordena las ideas desde la de mayor potencial hasta la de menor.
-7. La primera idea debe ser la mejor candidata para producirse
+7. Usa las se?ales recientes de YouTube como evidencia de demanda,
+   pero no copies t?tulos ni conviertas rumores en hechos.
+   No reutilices secuencias de tres o m?s palabras de esos t?tulos.
+8. Prefiere temas documentales duraderos que adem?s muestren inter?s
+   reciente y puedan explicarse con fuentes verificables.
+9. La primera idea debe ser la mejor candidata para producirse
    automaticamente.
-8. Devuelve solamente el JSON solicitado.
+10. Devuelve solamente el JSON solicitado.
 """.strip()
 
         respuesta = (
@@ -860,6 +895,23 @@ REGLAS:
                 "un lote diferente."
             )
 
+        ideas = ordenar_ideas_por_tendencia(
+            ideas=ideas,
+            investigacion=investigacion_tendencias,
+        )
+
+        seleccion_automatica = {
+            "titulo": ideas[0].get("titulo", ""),
+            "puntuacion_tendencia": ideas[0].get(
+                "puntuacion_tendencia",
+                0,
+            ),
+            "criterio": (
+                "demanda reciente, afinidad tem?tica, "
+                "originalidad y viabilidad documental"
+            ),
+        }
+
         return {
             "generado_en": datetime.now()
             .astimezone()
@@ -879,6 +931,12 @@ REGLAS:
                 for item in historial
             ],
             "ideas_rechazadas": rechazadas,
+            "investigacion_tendencias": (
+                investigacion_tendencias
+            ),
+            "seleccion_automatica": (
+                seleccion_automatica
+            ),
             "ideas": ideas,
         }
 

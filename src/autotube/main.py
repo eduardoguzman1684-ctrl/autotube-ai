@@ -494,6 +494,8 @@ def generar_ideas(argumentos: argparse.Namespace) -> None:
         cantidad=argumentos.cantidad,
         idioma=argumentos.idioma,
         data_dir=settings.data_dir,
+        youtube_api_key=settings.youtube_api_key,
+        region_tendencias="MX",
     )
 
     ruta = generador.guardar(
@@ -503,12 +505,58 @@ def generar_ideas(argumentos: argparse.Namespace) -> None:
 
     print("=" * 70)
 
+    investigacion = resultado.get(
+        "investigacion_tendencias",
+        {},
+    )
+
+    if investigacion.get("disponible"):
+        print(
+            "Tendencias YouTube: "
+            f"{investigacion.get('videos_analizados', 0)} "
+            "videos recientes analizados"
+        )
+        print(
+            "Regi?n:",
+            investigacion.get("region", "MX"),
+        )
+    else:
+        print(
+            "AVISO: tendencias externas no disponibles:",
+            investigacion.get(
+                "motivo",
+                "motivo desconocido",
+            ),
+        )
+
+    seleccion = resultado.get(
+        "seleccion_automatica",
+        {},
+    )
+
+    if seleccion:
+        print(
+            "SELECCI?N AUTOM?TICA:",
+            seleccion.get("titulo", ""),
+        )
+        print(
+            "Puntuaci?n de tendencia:",
+            seleccion.get(
+                "puntuacion_tendencia",
+                0,
+            ),
+        )
+
     for numero, idea in enumerate(resultado["ideas"], start=1):
         print(f"\n{numero}. {idea['titulo']}")
         print(f"   Formato: {idea['formato']}")
         print(f"   Duración: {idea['duracion_minutos']} minutos")
         print(f"   Palabra clave: {idea['palabra_clave']}")
         print(f"   Potencial: {idea['potencial']}")
+        print(
+            "   Tendencia:",
+            idea.get("puntuacion_tendencia", 0),
+        )
         print(f"   Gancho: {idea['gancho']}")
         print(f"   Ángulo: {idea['angulo']}")
 

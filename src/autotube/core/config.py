@@ -22,6 +22,7 @@ class Settings:
 
     gemini_api_key: str | None
     pixabay_api_key: str | None
+    youtube_api_key: str | None
     youtube_client_secret_file: str | None
 
     @property
@@ -76,6 +77,7 @@ def load_settings() -> Settings:
         log_level=os.getenv("AUTOTUBE_LOG_LEVEL", "INFO").upper(),
         gemini_api_key=os.getenv("GEMINI_API_KEY"),
         pixabay_api_key=os.getenv("PIXABAY_API_KEY"),
+        youtube_api_key=os.getenv("YOUTUBE_API_KEY"),
         youtube_client_secret_file=os.getenv(
             "YOUTUBE_CLIENT_SECRET_FILE"
         ),
