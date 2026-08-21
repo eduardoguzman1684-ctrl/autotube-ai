@@ -246,7 +246,7 @@ class GeneradorMiniaturaYouTube:
             fill=(255, 255, 255),
         )
 
-        titulo = self._texto_corto(metadata.get("title", "Automatización con IA"))
+        titulo = self._texto_corto(metadata.get("title", "El futuro de la IA"))
         lineas = self._wrap(draw, titulo, fuente_titulo, 720)
 
         y = 170
@@ -261,7 +261,7 @@ class GeneradorMiniaturaYouTube:
             )
             y += 88
 
-        # Sello "PASO A PASO".
+        # Sello "DOCUMENTAL IA".
         draw.rounded_rectangle(
             (86, 500, 392, 566),
             radius=16,
@@ -269,12 +269,12 @@ class GeneradorMiniaturaYouTube:
         )
         draw.text(
             (116, 516),
-            "PASO A PASO",
+            "DOCUMENTAL IA",
             font=fuente_sello,
             fill=(255, 255, 255),
         )
 
-        # Sello "SIN CÓDIGO".
+        # Sello "AVANCES IA".
         draw.rounded_rectangle(
             (418, 500, 690, 566),
             radius=16,
@@ -282,14 +282,14 @@ class GeneradorMiniaturaYouTube:
         )
         draw.text(
             (456, 516),
-            "SIN CÓDIGO",
+            "AVANCES IA",
             font=fuente_sello,
             fill=(255, 255, 255),
         )
 
         draw.text(
             (70, 646),
-            "IA • AUTOMATIZACIÓN • PRODUCTIVIDAD",
+            "CIENCIA ? TECNOLOG?A ? FUTURO",
             font=fuente_pie,
             fill=(242, 244, 255),
         )

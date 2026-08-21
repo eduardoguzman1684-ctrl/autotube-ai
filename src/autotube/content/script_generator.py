@@ -154,12 +154,11 @@ class GeneradorGuiones:
         )
 
         prompt = f"""
-Actúa como guionista profesional de YouTube especializado en
-inteligencia artificial, automatización, marketing digital,
-productividad y negocios digitales.
+Actua como guionista profesional de documentales de divulgacion
+sobre inteligencia artificial para el canal de YouTube NEXON IA.
 
-Convierte la siguiente idea en un guion original, educativo,
-dinámico y preparado para producción automática.
+Convierte la siguiente idea en un documental original, educativo,
+narrativo, riguroso y visualmente atractivo.
 
 IDEA:
 {idea_json}
@@ -167,26 +166,36 @@ IDEA:
 IDIOMA:
 {idioma_limpio}
 
+DURACION OBLIGATORIA:
+
+- duracion objetivo: 15 minutos;
+- narracion total: entre 2100 y 2250 palabras;
+- velocidad prevista: 145 palabras por minuto;
+- suma aproximada de las escenas: 900 segundos.
+
 REQUISITOS:
 
-1. El gancho inicial debe captar atención durante los primeros segundos.
-2. La introducción debe explicar claramente lo que aprenderá el espectador.
-3. Divide el contenido en escenas ordenadas.
-4. Cada escena debe incluir:
-   - narración completa;
-   - recursos visuales sugeridos;
-   - texto breve para mostrar en pantalla;
-   - duración aproximada en segundos.
-5. Para videos largos, utiliza entre 7 y 12 escenas.
-6. Para Shorts, utiliza entre 3 y 5 escenas.
-7. No inventes estadísticas, noticias, precios ni funciones actuales.
-8. No afirmes haber probado herramientas si no existe evidencia.
-9. Evita promesas irreales de ingresos.
-10. La narración debe sonar natural y no repetitiva.
-11. Incluye una llamada a la acción breve.
-12. Genera una descripción optimizada para YouTube.
-13. Genera entre 8 y 15 etiquetas relacionadas.
-14. Devuelve solamente el JSON solicitado.
+1. Escribe un gancho intrigante para los primeros 20 segundos.
+2. Presenta una pregunta central que se responda progresivamente.
+3. Divide el documental en entre 10 y 12 escenas ordenadas.
+4. Desarrolla contexto, historia, funcionamiento, avances,
+   aplicaciones, beneficios, riesgos y perspectivas futuras.
+5. Cada escena debe incluir narracion completa, recursos visuales
+   sugeridos, texto breve en pantalla y duracion en segundos.
+6. Sugiere recursos que puedan encontrarse como video_stock,
+   imagen_stock, grafico o texto_animado.
+7. No escribas tutoriales, instalaciones, configuraciones,
+   instrucciones paso a paso ni recorridos por interfaces.
+8. No ordenes al espectador abrir, instalar, pulsar o configurar nada.
+9. Explica los conceptos para publico general con ejemplos claros.
+10. Utiliza transiciones naturales y evita repetir informacion.
+11. No inventes estadisticas, investigaciones, noticias o citas.
+12. Si no existe certeza sobre una cifra, explicala sin dato numerico.
+13. Mantiene un tono documental, humano, reflexivo y dinamico.
+14. Incluye una conclusion que responda la pregunta central.
+15. Incluye una llamada a la accion breve al final.
+16. Genera descripcion para YouTube y entre 8 y 15 etiquetas.
+17. Devuelve solamente el JSON solicitado.
 """.strip()
 
         guion = self.cliente.generar_json(

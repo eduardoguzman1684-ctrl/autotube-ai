@@ -150,7 +150,7 @@ def validar_archivo_guion(
         if (
             duracion_declarada > 0
             and duracion_narracion
-            < duracion_declarada * 0.60
+            < duracion_declarada * 0.85
         ):
             advertencias.append(
                 f"La escena {numero} declara "
@@ -161,7 +161,7 @@ def validar_archivo_guion(
         if (
             duracion_declarada > 0
             and duracion_narracion
-            > duracion_declarada * 1.40
+            > duracion_declarada * 1.15
         ):
             advertencias.append(
                 f"La narración de la escena {numero} excede "
@@ -223,13 +223,13 @@ def validar_archivo_guion(
             / duracion_objetivo_segundos
         )
 
-        if porcentaje_real < 0.70:
+        if porcentaje_real < 0.95:
             errores.append(
                 "La narración es demasiado corta para la duración "
                 "objetivo del video."
             )
 
-        if porcentaje_real > 1.30:
+        if porcentaje_real > 1.05:
             errores.append(
                 "La narración es demasiado larga para la duración "
                 "objetivo del video."

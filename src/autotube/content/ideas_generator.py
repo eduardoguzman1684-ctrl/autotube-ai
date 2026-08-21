@@ -12,8 +12,9 @@ from autotube.ai.gemini_client import GeminiClient
 
 
 NICHO_PREDETERMINADO = (
-    "inteligencia artificial, automatizacion, herramientas digitales, "
-    "productividad y negocios digitales"
+    "documentales de divulgacion sobre inteligencia artificial, "
+    "su historia, funcionamiento, avances, innovaciones, aplicaciones, "
+    "impacto social, riesgos, etica y futuro"
 )
 
 
@@ -742,62 +743,75 @@ class GeneradorIdeas:
         )
 
         prompt = f"""
-Actua como estratega experto en crecimiento de canales de YouTube.
+Actua como director editorial y estratega de documentales para YouTube.
 
-Canal: NEXON IA.
+CANAL:
+NEXON IA.
 
-Genera exactamente {cantidad_candidatos} ideas CANDIDATAS para un canal
-internacional del nicho:
-
+NICHO:
 {nicho_limpio}
 
-Idioma de salida:
+IDIOMA:
 {idioma_limpio}
+
+Genera exactamente {cantidad_candidatos} ideas candidatas para
+documentales originales sobre inteligencia artificial.
 
 VIDEOS O GUIONES YA SELECCIONADOS:
 {historial_prompt}
 
-OBJETIVO PRINCIPAL:
+OBJETIVO EDITORIAL:
 
-Las nuevas ideas deben ampliar el catalogo del canal.
-NO deben ser variaciones superficiales de videos anteriores.
+El canal explica la inteligencia artificial al publico general mediante
+documentales narrativos, educativos, rigurosos y visualmente atractivos.
 
-Por ejemplo, si ya existe un tutorial de Make + inteligencia artificial
-+ automatizacion de correos, NO propongas otro tutorial de Make +
-ChatGPT/OpenAI + correos o tareas repetitivas como si fuera un tema nuevo.
+TEMAS PERMITIDOS:
 
-Busca variedad real en:
+- que es la inteligencia artificial y como funciona;
+- historia y evolucion de la inteligencia artificial;
+- grandes avances, descubrimientos e innovaciones;
+- inteligencia artificial generativa;
+- IA en medicina, ciencia, educacion, industria y sociedad;
+- robots, sistemas autonomos y computacion avanzada;
+- riesgos, privacidad, sesgos, regulacion y etica;
+- impacto laboral, economico, cultural y geopolitico;
+- carrera internacional por el liderazgo en IA;
+- escenarios futuros de la inteligencia artificial.
 
-- herramienta principal;
-- problema que se resuelve;
-- caso practico;
-- publico;
-- resultado final;
-- tipo de tutorial;
-- comparativa o experimento.
+TEMAS PROHIBIDOS:
+
+- tutoriales;
+- instalaciones;
+- configuraciones;
+- instrucciones paso a paso;
+- automatizaciones;
+- guias para usar programas;
+- recorridos por interfaces;
+- videos centrados en botones, cuentas o inicios de sesion;
+- temas que necesiten capturas de pantalla para comprenderse.
 
 Para cada idea proporciona:
 
-- titulo: titulo atractivo, claro y especifico;
-- gancho: frase inicial para captar la atencion;
-- formato: "video largo" o "short";
-- duracion_minutos: numero entero;
+- titulo: atractivo, documental, claro y honesto;
+- gancho: apertura intrigante sin sensacionalismo falso;
+- formato: siempre "video largo";
+- duracion_minutos: siempre 15;
 - palabra_clave: termino principal para SEO;
-- angulo: enfoque diferenciador;
+- angulo: enfoque documental diferenciador;
 - potencial: "alto", "medio" o "experimental".
 
 REGLAS:
 
-1. No repitas una herramienta principal recientemente utilizada,
-   salvo que el objetivo y el caso practico sean claramente distintos.
-2. No cambies solamente ChatGPT por OpenAI, Claude o Gemini para
-   presentar el mismo flujo como una idea diferente.
-3. No repitas automatizacion de correo si ya existe un tutorial
-   reciente sobre ese flujo.
-4. Prioriza diversidad real del catalogo.
-5. Combina tutoriales, comparativas, experimentos y herramientas.
-6. No inventes noticias ni funciones actuales.
-7. Evita titulos enga?osos.
+1. Cada idea debe poder ilustrarse con videos de stock, imagenes,
+   archivos historicos, laboratorios, ciudades, personas, robots,
+   centros de datos, naturaleza, ciencia, graficos y texto animado.
+2. No propongas temas que requieran mostrar una instalacion o interfaz.
+3. No repitas temas incluidos en el historial.
+4. Prioriza relevancia, curiosidad, utilidad publica y retencion.
+5. No inventes noticias, estudios, estadisticas ni avances.
+6. Ordena las ideas desde la de mayor potencial hasta la de menor.
+7. La primera idea debe ser la mejor candidata para producirse
+   automaticamente.
 8. Devuelve solamente el JSON solicitado.
 """.strip()
 

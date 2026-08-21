@@ -63,9 +63,6 @@ PLAN_VISUAL_SCHEMA: dict[str, Any] = {
                                     "enum": [
                                         "video_stock",
                                         "imagen_stock",
-                                        "captura_interfaz",
-                                        "captura_web_real",
-                                        "grafico",
                                         "texto_animado",
                                     ],
                                 },
@@ -694,36 +691,14 @@ INSTRUCCIONES OBLIGATORIAS:
    - final_segundos
    - duracion_segundos
 6. No combines frases pertenecientes a bloques diferentes.
-7. Si el texto describe una plataforma digital real como Make,
-   ChatGPT, OpenAI, Gmail, n8n, Supabase, Notion, Claude, Cursor,
-   v0, HeyGen o ElevenLabs, y la narraci?n explica qu? pantalla
-   abrir o qu? acci?n realizar, usa "captura_web_real".
-
-   En esos clips completa:
-   - plataforma: nombre exacto de la plataforma;
-   - pantalla_objetivo: pantalla que debe verse;
-   - accion_visual: acci?n que se explica;
-   - url_oficial: URL oficial ?nicamente si la conoces con certeza;
-   - requiere_login: true solo si esa pantalla necesita sesi?n.
-
-   Ejemplos:
-   "entra al sitio de Make"
-   -> captura_web_real / Make / p?gina oficial.
-
-   "reg?strate en Make"
-   -> captura_web_real / Make / p?gina de registro.
-
-   "crea un nuevo escenario"
-   -> captura_web_real / Make / panel de escenarios / requiere_login true.
-
-   "abre ChatGPT"
-   -> captura_web_real / ChatGPT / interfaz principal.
-
-   "abre la plataforma de OpenAI para usar la API"
-   -> captura_web_real / OpenAI / plataforma o documentaci?n de API.
-
-   No sustituyas una acci?n concreta de software por una persona
-   mirando una computadora.
+7. Nunca uses "captura_web_real" ni "captura_interfaz".
+   No abras navegadores, p?ginas web ni pantallas que requieran inicio de sesi?n.
+   Si la narraci?n menciona ChatGPT, OpenAI, inteligencia artificial,
+   aplicaciones o plataformas digitales, representa el concepto mediante:
+   - "video_stock" para escenas reales relacionadas;
+   - "imagen_stock" para fotograf?as o ilustraciones relacionadas;
+   - "texto_animado" para conceptos y mensajes breves.
+   Las im?genes deben coincidir directamente con el texto narrado.
 8. Usa "video_stock" e "imagen_stock" principalmente para conceptos
    f?sicos, personas, oficinas, productividad, tiempo, negocios,
    servidores u otras escenas que realmente existan como B-roll.
@@ -740,13 +715,54 @@ INSTRUCCIONES OBLIGATORIAS:
 14. No repitas la misma descripci?n o b?squeda en clips consecutivos.
 15. Alterna recursos solo cuando tenga sentido para la narraci?n.
 16. Para herramientas digitales no inventes caracter?sticas o
-    botones inexistentes; las capturas locales son ilustrativas.
+    botones inexistentes; usa representaciones visuales conceptuales sin inventar interfaces.
 17. movimiento puede ser:
     zoom lento, paneo horizontal, acercamiento,
     desplazamiento vertical, corte directo o sin movimiento.
 18. texto_pantalla debe ser breve y solo cuando a?ada valor.
 19. El resultado es horizontal 1920x1080.
-20. Devuelve exclusivamente el JSON solicitado.
+20. Entre el 65 y el 75 por ciento de los clips debe ser
+    imagen_stock. Estas im?genes ser?n verificadas posteriormente
+    por Gemini antes de incluirlas.
+21. Usa video_stock solamente cuando exista una acci?n f?sica real
+    que pueda encontrarse como video: personas trabajando,
+    servidores funcionando, laboratorios, hospitales, tribunales,
+    f?bricas, ciudades o equipos en movimiento.
+22. video_stock debe representar entre el 20 y el 30 por ciento
+    del documental. No uses videos abstractos de luces, part?culas,
+    rostros rob?ticos gen?ricos o c?digos aleatorios.
+23. Usa texto_animado en un m?ximo de 5 clips en todo el documental,
+    nunca m?s de uno por segmento y ?nicamente para el t?tulo,
+    una pregunta central, transiciones importantes o la llamada
+    a la acci?n.
+24. Cada b?squeda debe derivarse directamente del texto_narrado.
+25. Para una fotograf?a real, incluye en descripcion la frase
+    "fotograf?a real" y describe sujeto, acci?n, lugar y contexto.
+26. Para explicar arquitectura, capas, flujo de datos o procesos
+    matem?ticos, usa imagen_stock y especifica "diagrama t?cnico".
+27. busqueda_en debe contener entre 5 y 10 t?rminos concretos en
+    ingl?s apropiados para Wikimedia Commons y Pixabay.
+28. Cuando exista una entidad concreta, incluye su nombre:
+    NVIDIA H100, GPU data center, hospital MRI, courtroom,
+    bank credit evaluation, transformer neural network u otra
+    entidad mencionada por la narraci?n.
+29. Proh?be b?squedas gen?ricas aisladas como artificial intelligence,
+    technology, computer, future, data, digital o business.
+30. No uses una computadora dom?stica para representar un centro
+    de datos, una GPU especializada o infraestructura de IA.
+31. No uses gr?ficos de barras, porcentajes, estad?sticas inventadas,
+    plantillas repetitivas ni infograf?as sin datos verificables.
+32. No repitas la misma b?squeda ni el mismo sujeto visual en clips
+    consecutivos.
+33. Para conceptos abstractos utiliza un diagrama t?cnico real,
+    una fotograf?a cient?fica o una aplicaci?n concreta relacionada.
+34. Si no existe una representaci?n visual precisa, describe el
+    recurso como pendiente; no sustituyas el concepto por una
+    imagen atractiva pero incorrecta.
+35. Antes de aceptar cada clip, comprueba que una persona pueda
+    relacionar directamente el recurso con la frase narrada.
+36. No utilices el avatar NEX como sustituto de im?genes documentales.
+37. Devuelve exclusivamente el JSON solicitado.
 """.strip()
 
         resultado = self.cliente.generar_json(
@@ -808,26 +824,12 @@ INSTRUCCIONES OBLIGATORIAS:
                 dict[str, Any]
             ] = []
 
-            claves_interfaz = (
-                "make",
-                "chatgpt",
-                "openai",
-                "gmail",
-                "google sheets",
-                "notion",
-                "panel",
-                "bot?n",
-                "boton",
-                "escenario",
-                "m?dulo",
-                "modulo",
-                "trigger",
-                "disparador",
-                "formulario",
-                "interfaz",
-                "cuenta",
-                "prompt",
-            )
+            tipos_permitidos = {
+                "video_stock",
+                "imagen_stock",
+                "texto_animado",
+                "grafico",
+            }
 
             for indice, bloque in enumerate(
                 bloques,
@@ -853,17 +855,11 @@ INSTRUCCIONES OBLIGATORIAS:
                 tipo_recurso = str(
                     clip.get(
                         "tipo_recurso",
-                        "grafico",
-                    )
+                            )
                 )
 
-                if any(
-                    clave in texto_minusculas
-                    for clave in claves_interfaz
-                ):
-                    tipo_recurso = (
-                        "captura_web_real"
-                    )
+                if tipo_recurso not in tipos_permitidos:
+                    tipo_recurso = "imagen_stock"
 
                 clip["orden"] = indice + 1
 
@@ -955,6 +951,36 @@ INSTRUCCIONES OBLIGATORIAS:
                     "texto_pantalla",
                     "",
                 )
+
+                descripcion_minusculas = str(
+                    clip.get(
+                        "descripcion",
+                        "",
+                    )
+                ).lower()
+
+                indicadores_grafico = (
+                    "diagrama t?cnico",
+                    "diagrama tecnico",
+                    "gr?fico t?cnico",
+                    "grafico tecnico",
+                    "mapa de calor",
+                    "matriz num?rica",
+                    "matriz numerica",
+                    "cuadrante comparativo",
+                    "curva comparativa",
+                    "flujo de decisi?n",
+                    "flujo de decision",
+                    "arquitectura de red",
+                    "sistema de coordenadas",
+                    "espacio vectorial",
+                )
+
+                if any(
+                    indicador in descripcion_minusculas
+                    for indicador in indicadores_grafico
+                ):
+                    clip["tipo_recurso"] = "grafico"
 
                 clips_alineados.append(
                     clip

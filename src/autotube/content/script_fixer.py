@@ -115,7 +115,7 @@ class ReparadorGuiones:
             )
 
         palabras_objetivo_total = (
-            minutos_objetivo * palabras_por_minuto
+            round(minutos_objetivo * palabras_por_minuto * 1.04)
         )
 
         plan_escenas: list[dict[str, Any]] = []
@@ -144,6 +144,7 @@ class ReparadorGuiones:
                     duracion
                     / 60
                     * palabras_por_minuto
+                    * 1.04
                 ),
             )
 
@@ -178,10 +179,11 @@ class ReparadorGuiones:
         )
 
         prompt = f"""
-Actúa como guionista profesional y editor de narraciones para YouTube.
+Actua como editor profesional de documentales de divulgacion
+sobre inteligencia artificial para el canal NEXON IA.
 
-El siguiente guion declara una duración de {minutos_objetivo} minutos,
-pero su narración es demasiado corta.
+El siguiente documental declara una duracion de
+{minutos_objetivo} minutos, pero su narracion es demasiado corta.
 
 GUION ACTUAL:
 {guion_json}
@@ -195,27 +197,26 @@ calculadas a {palabras_por_minuto} palabras por minuto.
 
 INSTRUCCIONES OBLIGATORIAS:
 
-1. Conserva el mismo tema, título, formato y número de escenas.
-2. Conserva exactamente la duración en segundos de cada escena.
-3. Amplía la narración de cada escena hasta aproximarse a su número
-   de palabras objetivo.
-4. Cada narración puede variar como máximo un 10 % respecto al objetivo.
-5. Utiliza transiciones naturales entre escenas.
-6. Explica los procesos de forma clara, práctica y educativa.
-7. Añade ejemplos útiles, advertencias, contexto y pasos detallados.
-8. No rellenes el texto con repeticiones innecesarias.
-9. No inventes estadísticas, precios, resultados, noticias ni funciones.
-10. Cuando un paso dependa de una interfaz que pueda cambiar,
-    indícalo de forma general y recomienda verificar la interfaz actual.
-11. No afirmes que una herramienta fue probada personalmente.
-12. No muestres ni solicites claves API reales.
-13. Mantén los recursos visuales y el texto en pantalla relacionados
-    con la narración.
-14. Mantén una llamada a la acción breve.
-15. Devuelve exclusivamente el JSON solicitado.
+1. Conserva el tema, titulo y numero de escenas.
+2. Conserva exactamente la duracion en segundos de cada escena.
+3. Amplia cada escena hasta aproximarse a sus palabras objetivo.
+4. Cada escena puede variar como maximo un 10 por ciento.
+5. Mantiene un estilo documental, narrativo y divulgativo.
+6. Agrega contexto historico, explicaciones, ejemplos,
+   consecuencias, contrastes y reflexiones relevantes.
+7. Utiliza transiciones naturales entre escenas.
+8. No a?adas tutoriales, instalaciones, configuraciones,
+   pasos detallados ni instrucciones sobre interfaces.
+9. No ordenes abrir, instalar, pulsar o configurar programas.
+10. No rellenes el texto con repeticiones.
+11. No inventes estadisticas, estudios, noticias, precios o citas.
+12. Mantiene los recursos visuales relacionados con la narracion
+    y compatibles con videos de stock, imagenes de stock y texto animado.
+13. Conserva una conclusion clara y una llamada a la accion breve.
+14. Devuelve exclusivamente el JSON solicitado.
 
-El resultado debe contener narración suficiente para acercarse
-realmente a la duración declarada.
+El resultado debe contener narracion suficiente para aproximarse
+realmente a la duracion declarada.
 """.strip()
 
         guion_corregido = self.cliente.generar_json(
