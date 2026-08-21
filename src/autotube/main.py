@@ -374,6 +374,12 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Completa el video pero no lo sube a YouTube.",
     )
 
+    run_parser.add_argument(
+        "--reanudar",
+        action="store_true",
+        help="Contin?a desde el ?ltimo paso completado.",
+    )
+
 
     tutorial_parser = subcomandos.add_parser(
         "tutorial-capture",
@@ -1091,6 +1097,72 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
 
     project_root = Path(__file__).resolve().parents[2]
 
+    import json
+
+    ruta_estado = (
+        project_root
+        / "data"
+        / "pipeline_state.json"
+    )
+
+    estado: dict[str, object] = {
+        "completado": False,
+        "pasos_completados": [],
+        "ultimo_error": "",
+        "parametros": {
+            "nicho": argumentos.nicho,
+            "cantidad_ideas": argumentos.cantidad_ideas,
+            "indice": argumentos.indice,
+            "voz": argumentos.voz,
+            "velocidad": argumentos.velocidad,
+            "tono": argumentos.tono,
+        },
+    }
+
+    if argumentos.reanudar and ruta_estado.is_file():
+        try:
+            cargado = json.loads(
+                ruta_estado.read_text(
+                    encoding="utf-8-sig"
+                )
+            )
+
+            if isinstance(cargado, dict):
+                estado = cargado
+
+            print(
+                "Reanudaci?n activada. "
+                "Se conservar?n los pasos completados."
+            )
+
+        except Exception:
+            print(
+                "El estado anterior no pudo leerse. "
+                "Se iniciar? un pipeline nuevo."
+            )
+
+    def guardar_estado() -> None:
+        ruta_estado.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        temporal = ruta_estado.with_suffix(".tmp")
+
+        temporal.write_text(
+            json.dumps(
+                estado,
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        temporal.replace(ruta_estado)
+
+    if not argumentos.reanudar:
+        guardar_estado()
+
     autotube_exe = shutil.which("autotube")
 
     if autotube_exe:
@@ -1120,11 +1192,49 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
             " ".join(str(parte) for parte in comando),
         )
 
-        subprocess.run(
-            comando,
-            cwd=project_root,
-            check=True,
+        try:
+            subprocess.run(
+                comando,
+                cwd=project_root,
+                check=True,
+            )
+
+        except Exception as error:
+            estado["ultimo_error"] = (
+                f"{nombre}: {error}"
+            )
+
+            if nombre == "Validaci?n del guion corregido":
+                completados = estado.get(
+                    "pasos_completados",
+                    [],
+                )
+
+                if isinstance(completados, list):
+                    while (
+                        "Correcci?n y expansi?n del guion"
+                        in completados
+                    ):
+                        completados.remove(
+                            "Correcci?n y expansi?n del guion"
+                        )
+
+            guardar_estado()
+            raise
+
+        completados = estado.setdefault(
+            "pasos_completados",
+            [],
         )
+
+        if (
+            isinstance(completados, list)
+            and nombre not in completados
+        ):
+            completados.append(nombre)
+
+        estado["ultimo_error"] = ""
+        guardar_estado()
 
     pasos: list[tuple[str, list[str]]] = []
 
@@ -1231,6 +1341,22 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
         pasos,
         start=1,
     ):
+        completados = estado.get(
+            "pasos_completados",
+            [],
+        )
+
+        if (
+            argumentos.reanudar
+            and isinstance(completados, list)
+            and nombre in completados
+        ):
+            print(
+                f"PASO {numero}/{total} OMITIDO: "
+                f"{nombre}"
+            )
+            continue
+
         ejecutar_paso(
             numero,
             total,
@@ -1289,6 +1415,10 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
             cwd=project_root,
             check=True,
         )
+
+    estado["completado"] = True
+    estado["ultimo_error"] = ""
+    guardar_estado()
 
     print()
     print("#" * 72)
