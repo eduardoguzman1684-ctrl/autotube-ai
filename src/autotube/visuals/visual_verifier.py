@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import httpx
 from google.genai import errors, types
 from PIL import Image, ImageDraw, ImageOps
 
@@ -57,14 +58,35 @@ class VerificadorVisualGemini:
                     self.cliente.last_model_used = modelo
                     return respuesta
 
-                except errors.ServerError as error:
+                except (
+                    errors.ServerError,
+                    httpx.TimeoutException,
+                    httpx.ConnectError,
+                ) as error:
                     ultimo_error = error
 
                     if intento < 2:
                         espera = 5 * intento
 
+                        if isinstance(
+                            error,
+                            httpx.TimeoutException,
+                        ):
+                            motivo = (
+                                "no respondi? dentro del l?mite"
+                            )
+                        elif isinstance(
+                            error,
+                            httpx.ConnectError,
+                        ):
+                            motivo = (
+                                "present? un error de conexi?n"
+                            )
+                        else:
+                            motivo = "est? saturado"
+
                         print(
-                            "  Gemini saturado. "
+                            f"  Gemini {motivo}. "
                             f"Reintento {intento}/2 "
                             f"en {espera} segundos..."
                         )

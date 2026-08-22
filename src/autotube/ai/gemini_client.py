@@ -7,6 +7,7 @@ import random
 import time
 from typing import Any
 
+import httpx
 from google import genai
 from google.genai import errors, types
 
@@ -29,6 +30,7 @@ class GeminiClient:
         fallback_model: str | None = None,
         max_attempts: int = 3,
         base_delay: float = 2.0,
+        request_timeout_seconds: float | None = None,
     ) -> None:
         settings = load_settings()
 
@@ -52,6 +54,25 @@ class GeminiClient:
 
         self.max_attempts = max(1, max_attempts)
         self.base_delay = max(0.5, base_delay)
+
+        if request_timeout_seconds is None:
+            try:
+                request_timeout_seconds = float(
+                    os.getenv(
+                        "GEMINI_TIMEOUT_SECONDS",
+                        "90",
+                    )
+                )
+            except (TypeError, ValueError):
+                request_timeout_seconds = 90.0
+
+        self.request_timeout_seconds = max(
+            15.0,
+            min(
+                float(request_timeout_seconds),
+                300.0,
+            ),
+        )
         self.last_model_used: str | None = None
 
         if not self.api_key:
@@ -59,7 +80,15 @@ class GeminiClient:
                 "GEMINI_API_KEY no está configurada en el archivo .env."
             )
 
-        self.client = genai.Client(api_key=self.api_key)
+        self.client = genai.Client(
+            api_key=self.api_key,
+            http_options=types.HttpOptions(
+                timeout=int(
+                    self.request_timeout_seconds
+                    * 1000
+                ),
+            ),
+        )
 
     def _modelos_disponibles(self) -> list[str]:
         """Devuelve los modelos en orden de prioridad sin duplicados."""
@@ -98,7 +127,11 @@ class GeminiClient:
                 self.last_model_used = modelo
                 return texto
 
-            except errors.ServerError as error:
+            except (
+                errors.ServerError,
+                httpx.TimeoutException,
+                httpx.ConnectError,
+            ) as error:
                 ultimo_error = error
 
                 if intento >= self.max_attempts:
@@ -119,6 +152,24 @@ class GeminiClient:
                 )
 
                 time.sleep(espera)
+
+            except errors.ClientError as error:
+                ultimo_error = error
+                mensaje = str(error)
+
+                if (
+                    "429" in mensaje
+                    or "RESOURCE_EXHAUSTED" in mensaje
+                    or "quota" in mensaje.lower()
+                ):
+                    logger.warning(
+                        "Cuota agotada para %s. "
+                        "Probando el modelo de respaldo.",
+                        modelo,
+                    )
+                    break
+
+                raise
 
         raise RuntimeError(
             f"El modelo {modelo} continúa temporalmente no disponible."
