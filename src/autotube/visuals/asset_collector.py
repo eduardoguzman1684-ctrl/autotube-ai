@@ -1634,12 +1634,63 @@ class RecolectorRecursos:
                 "en una solicitud de Gemini."
             )
 
-            resultados = (
-                self.verificador_visual.seleccionar_lote(
-                    grupos=grupos_pendientes,
-                    lamina_temporal=lamina,
+            if getattr(
+                self,
+                "_verificacion_visual_remota_desactivada",
+                False,
+            ):
+                resultados = {}
+            else:
+                try:
+                    resultados = (
+                        self.verificador_visual.seleccionar_lote(
+                            grupos=grupos_pendientes,
+                            lamina_temporal=lamina,
+                        )
+                    )
+                except RuntimeError as error:
+                    self._verificacion_visual_remota_desactivada = True
+                    resultados = {}
+
+                    print(
+                        "  AVISO: Gemini no esta disponible. "
+                        "Se activara la seleccion visual local "
+                        f"durante esta ejecucion: {error}"
+                    )
+
+            if not resultados:
+                print(
+                    "  RESPALDO LOCAL: se utilizara el primer "
+                    "candidato disponible de cada clip."
                 )
-            )
+
+                for grupo_respaldo in grupos_pendientes:
+                    identificador_respaldo = str(
+                        grupo_respaldo["id"]
+                    )
+
+                    recursos_respaldo = metadatos_grupo[
+                        identificador_respaldo
+                    ]["recursos"]
+
+                    resultados[
+                        identificador_respaldo
+                    ] = {
+                        "seleccion": (
+                            1
+                            if recursos_respaldo
+                            else 0
+                        ),
+                        "aprobada": bool(
+                            recursos_respaldo
+                        ),
+                        "puntaje": 0,
+                        "motivo": (
+                            "Seleccion local de respaldo; "
+                            "Gemini no disponible."
+                        ),
+                        "respaldo_local": True,
+                    }
 
             for grupo in grupos_pendientes:
                 identificador = str(
@@ -1808,9 +1859,6 @@ class RecolectorRecursos:
             "RESOURCE_EXHAUSTED",
             "QUOTA EXCEEDED",
             "GENERATE_CONTENT_FREE_TIER_REQUESTS",
-            "GETADDRINFO FAILED",
-            "NAME_NOT_RESOLVED",
-            "TEMPORARY FAILURE IN NAME RESOLUTION",
         )
 
         if not any(
