@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -115,7 +116,7 @@ class ReparadorGuiones:
             )
 
         palabras_objetivo_total = (
-            round(minutos_objetivo * palabras_por_minuto * 1.04)
+            minutos_objetivo * palabras_por_minuto
         )
 
         plan_escenas: list[dict[str, Any]] = []
@@ -144,7 +145,6 @@ class ReparadorGuiones:
                     duracion
                     / 60
                     * palabras_por_minuto
-                    * 1.04
                 ),
             )
 
@@ -219,10 +219,101 @@ El resultado debe contener narracion suficiente para aproximarse
 realmente a la duracion declarada.
 """.strip()
 
-        guion_corregido = self.cliente.generar_json(
-            prompt=prompt,
-            schema=SCRIPT_SCHEMA,
+        palabras_antes = contar_palabras_guion(
+            guion_original
         )
+
+        palabras_minimas = math.ceil(
+            minutos_objetivo
+            * palabras_por_minuto
+            * 0.95
+        )
+
+        palabras_maximas = math.floor(
+            minutos_objetivo
+            * palabras_por_minuto
+            * 1.05
+        )
+
+        mejor_guion = guion_original
+        mejor_palabras = palabras_antes
+
+        for intento in range(1, 4):
+            prompt_intento = (
+                prompt
+                + "\n\nCONTROL AUTOMATICO DE LONGITUD:\n"
+                + f"Este es el intento {intento} de 3.\n"
+                + "No resumas ni reduzcas ninguna escena.\n"
+                + f"El resultado debe tener entre "
+                + f"{palabras_minimas} y "
+                + f"{palabras_maximas} palabras narradas.\n"
+                + f"El objetivo ideal es exactamente "
+                + f"{palabras_objetivo_total} palabras."
+            )
+
+            candidato = self.cliente.generar_json(
+                prompt=prompt_intento,
+                schema=SCRIPT_SCHEMA,
+            )
+
+            escenas_candidatas = candidato.get(
+                "escenas"
+            )
+
+            if (
+                not isinstance(escenas_candidatas, list)
+                or len(escenas_candidatas)
+                != len(escenas_originales)
+            ):
+                print(
+                    f"Intento {intento}/3 descartado: "
+                    "estructura invalida."
+                )
+                continue
+
+            palabras_candidato = contar_palabras_guion(
+                candidato
+            )
+
+            print(
+                f"Intento {intento}/3: "
+                f"{palabras_candidato} palabras"
+            )
+
+            if (
+                palabras_minimas
+                <= palabras_candidato
+                <= palabras_maximas
+            ):
+                mejor_guion = candidato
+                mejor_palabras = palabras_candidato
+                break
+
+            distancia_actual = abs(
+                mejor_palabras
+                - palabras_objetivo_total
+            )
+
+            distancia_candidato = abs(
+                palabras_candidato
+                - palabras_objetivo_total
+            )
+
+            if distancia_candidato < distancia_actual:
+                mejor_guion = candidato
+                mejor_palabras = palabras_candidato
+
+        if not (
+            palabras_minimas
+            <= mejor_palabras
+            <= palabras_maximas
+        ):
+            raise RuntimeError(
+                "Gemini no alcanzo el rango valido despues "
+                "de 3 intentos. No se guardara un guion invalido."
+            )
+
+        guion_corregido = mejor_guion
 
         escenas_corregidas = guion_corregido.get(
             "escenas"

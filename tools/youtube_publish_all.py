@@ -1,8 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
+import ssl
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -128,9 +130,75 @@ def upload_video(
     )
 
     response = None
+    reintentos = 0
+    max_reintentos = 8
 
     while response is None:
-        status, response = request.next_chunk()
+        try:
+            status, response = request.next_chunk()
+            reintentos = 0
+
+        except HttpError as error:
+            codigo = getattr(
+                error.resp,
+                "status",
+                None,
+            )
+
+            if codigo not in {
+                500,
+                502,
+                503,
+                504,
+            }:
+                raise
+
+            reintentos += 1
+
+            if reintentos > max_reintentos:
+                raise
+
+            espera = min(
+                60,
+                2 ** reintentos,
+            )
+
+            print(
+                "YouTube temporalmente no disponible. "
+                f"Reintento {reintentos}/"
+                f"{max_reintentos} en "
+                f"{espera} segundos..."
+            )
+
+            time.sleep(espera)
+            continue
+
+        except (
+            ssl.SSLError,
+            ConnectionError,
+            TimeoutError,
+            OSError,
+        ) as error:
+            reintentos += 1
+
+            if reintentos > max_reintentos:
+                raise
+
+            espera = min(
+                60,
+                2 ** reintentos,
+            )
+
+            print(
+                "Conexion interrumpida durante la subida "
+                f"({type(error).__name__}). "
+                f"Reintento {reintentos}/"
+                f"{max_reintentos} en "
+                f"{espera} segundos..."
+            )
+
+            time.sleep(espera)
+            continue
 
         if status:
             print(

@@ -4,6 +4,7 @@ import json
 import shutil
 import subprocess
 import textwrap
+import unicodedata
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
@@ -137,19 +138,102 @@ class GeneradorMiniaturaYouTube:
 
     @staticmethod
     def _texto_corto(titulo: str) -> str:
-        limpio = " ".join(str(titulo).replace("|", " ").split())
-        if len(limpio) <= 58:
-            return limpio
-        palabras = limpio.split()
-        salida: list[str] = []
-        total = 0
-        for palabra in palabras:
-            extra = len(palabra) + (1 if salida else 0)
-            if total + extra > 58:
-                break
-            salida.append(palabra)
-            total += extra
-        return " ".join(salida).rstrip(":-–—") or limpio[:58].rstrip()
+        """Crea un gancho breve para la miniatura."""
+        limpio = " ".join(
+            str(titulo)
+            .replace("|", " ")
+            .split()
+        )
+
+        normalizado = "".join(
+            caracter
+            for caracter in unicodedata.normalize(
+                "NFD",
+                limpio.lower(),
+            )
+            if not unicodedata.combining(
+                caracter
+            )
+        )
+
+        reglas = [
+            (
+                ("agente", "autonom", "rebelion"),
+                "IA SIN CONTROL",
+            ),
+            (
+                ("web", "internet", "navegador", "buscador"),
+                "ADIÓS A LA WEB",
+            ),
+            (
+                ("robot", "humanoid"),
+                "ROBOTS ENTRE NOSOTROS",
+            ),
+            (
+                ("medicina", "salud", "enfermedad", "biologia"),
+                "IA QUE SALVA VIDAS",
+            ),
+            (
+                ("deepfake", "verdad", "falsificacion"),
+                "¿QUÉ ES REAL?",
+            ),
+            (
+                ("trabajo", "empleo", "laboral"),
+                "¿TU EMPLEO EN RIESGO?",
+            ),
+            (
+                ("energia", "electrica", "consumo"),
+                "EL PRECIO DE LA IA",
+            ),
+            (
+                ("mente", "cerebro", "neuro"),
+                "¿LEERÁ TU MENTE?",
+            ),
+            (
+                ("soledad", "pareja", "afecto", "relaciones"),
+                "AMOR ARTIFICIAL",
+            ),
+            (
+                ("militar", "guerra", "armas"),
+                "GUERRA SIN HUMANOS",
+            ),
+        ]
+
+        for palabras_clave, gancho in reglas:
+            if any(
+                palabra in normalizado
+                for palabra in palabras_clave
+            ):
+                return gancho
+
+        base = limpio.split(":", 1)[0]
+
+        palabras = [
+            palabra.strip("¿?¡!.,;:-")
+            for palabra in base.split()
+            if palabra.strip("¿?¡!.,;:-")
+        ]
+
+        articulos = {
+            "el",
+            "la",
+            "los",
+            "las",
+            "un",
+            "una",
+        }
+
+        while (
+            palabras
+            and palabras[0].lower()
+            in articulos
+        ):
+            palabras.pop(0)
+
+        return (
+            " ".join(palabras[:4]).upper()
+            or "EL FUTURO DE LA IA"
+        )
 
     @staticmethod
     def _wrap(draw: ImageDraw.ImageDraw, texto: str, fuente, ancho_max: int) -> list[str]:
@@ -173,16 +257,33 @@ class GeneradorMiniaturaYouTube:
         return lineas[:3]
 
     def generar(self, forzar: bool = False) -> tuple[Path, bool]:
+        """Genera una miniatura cinematografica y legible."""
         metadata = self._metadata()
         video = self._video()
 
-        output_dir = self.project_root / "output" / "thumbnails"
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = (
+            self.project_root
+            / "output"
+            / "thumbnails"
+        )
 
-        salida = output_dir / "miniatura_youtube_autotube.jpg"
+        output_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        salida = (
+            output_dir
+            / "miniatura_youtube_autotube.jpg"
+        )
 
         entradas = [
-            self.project_root / "data" / "publish" / "metadata.json",
+            (
+                self.project_root
+                / "data"
+                / "publish"
+                / "metadata.json"
+            ),
             video,
         ]
 
@@ -190,111 +291,396 @@ class GeneradorMiniaturaYouTube:
             salida.exists()
             and not forzar
             and salida.stat().st_size > 0
-            and salida.stat().st_mtime >= max(p.stat().st_mtime for p in entradas)
+            and salida.stat().st_mtime
+            >= max(
+                entrada.stat().st_mtime
+                for entrada in entradas
+            )
         ):
             return salida, False
 
-        frame = output_dir / "_thumb_frame_tmp.jpg"
-        self._extraer_frame(video, frame)
+        frame = (
+            output_dir
+            / "_thumb_frame_tmp.jpg"
+        )
 
-        imagen = Image.open(frame).convert("RGB")
-        imagen = imagen.resize((self.ANCHO, self.ALTO))
-        imagen = ImageEnhance.Brightness(imagen).enhance(0.42)
-        imagen = ImageEnhance.Contrast(imagen).enhance(1.15)
-        imagen = imagen.filter(ImageFilter.GaussianBlur(radius=1.2))
+        self._extraer_frame(
+            video,
+            frame,
+        )
 
-        overlay = Image.new("RGBA", imagen.size, (0, 0, 0, 0))
-        draw_overlay = ImageDraw.Draw(overlay)
+        imagen = Image.open(
+            frame
+        ).convert("RGB")
 
-        # Franja superior de marca.
+        imagen = imagen.resize(
+            (
+                self.ANCHO,
+                self.ALTO,
+            )
+        )
+
+        imagen = ImageEnhance.Brightness(
+            imagen
+        ).enhance(0.82)
+
+        imagen = ImageEnhance.Contrast(
+            imagen
+        ).enhance(1.30)
+
+        imagen = ImageEnhance.Color(
+            imagen
+        ).enhance(1.25)
+
+        imagen = ImageEnhance.Sharpness(
+            imagen
+        ).enhance(1.15)
+
+        overlay = Image.new(
+            "RGBA",
+            imagen.size,
+            (
+                0,
+                0,
+                0,
+                0,
+            ),
+        )
+
+        draw_overlay = ImageDraw.Draw(
+            overlay
+        )
+
+        # Gradiente oscuro solo en la zona del gancho.
+        for x in range(
+            0,
+            900,
+            3,
+        ):
+            proporcion = (
+                1
+                - x / 900
+            )
+
+            alpha = int(
+                238
+                * proporcion
+                * proporcion
+            )
+
+            draw_overlay.rectangle(
+                (
+                    x,
+                    0,
+                    x + 3,
+                    self.ALTO,
+                ),
+                fill=(
+                    2,
+                    5,
+                    16,
+                    alpha,
+                ),
+            )
+
+        # Franja inferior para el titulo completo.
+        draw_overlay.rectangle(
+            (
+                0,
+                470,
+                self.ANCHO,
+                self.ALTO,
+            ),
+            fill=(
+                2,
+                5,
+                15,
+                255,
+            ),
+        )
+
+        # Identidad NEXON IA.
         draw_overlay.rounded_rectangle(
-            (42, 34, 250, 92),
+            (
+                42,
+                32,
+                252,
+                94,
+            ),
             radius=16,
-            fill=(8, 12, 28, 235),
-            outline=(0, 230, 255, 230),
+            fill=(
+                5,
+                10,
+                24,
+                235,
+            ),
+            outline=(
+                0,
+                224,
+                245,
+                245,
+            ),
             width=3,
         )
 
-        # Panel oscuro para legibilidad del título.
+        # Linea de tension visual.
         draw_overlay.rounded_rectangle(
-            (40, 122, 860, 615),
-            radius=34,
-            fill=(4, 8, 24, 210),
-            outline=(124, 58, 237, 220),
-            width=4,
+            (
+                47,
+                155,
+                59,
+                474,
+            ),
+            radius=6,
+            fill=(
+                245,
+                45,
+                65,
+                245,
+            ),
         )
 
-        # Acento inferior.
-        draw_overlay.rounded_rectangle(
-            (40, 630, 1238, 690),
-            radius=18,
-            fill=(14, 18, 38, 235),
+        imagen = Image.alpha_composite(
+            imagen.convert("RGBA"),
+            overlay,
         )
 
-        imagen = Image.alpha_composite(imagen.convert("RGBA"), overlay)
-        draw = ImageDraw.Draw(imagen)
+        draw = ImageDraw.Draw(
+            imagen
+        )
 
-        fuente_marca = self._fuente(31, bold=True)
-        fuente_titulo = self._fuente(67, bold=True)
-        fuente_sello = self._fuente(29, bold=True)
-        fuente_pie = self._fuente(27, bold=True)
+        fuente_marca = self._fuente(
+            31,
+            bold=True,
+        )
 
         draw.text(
-            (72, 47),
+            (
+                72,
+                47,
+            ),
             "NEXON IA",
             font=fuente_marca,
-            fill=(255, 255, 255),
+            fill=(
+                255,
+                255,
+                255,
+            ),
         )
 
-        titulo = self._texto_corto(metadata.get("title", "El futuro de la IA"))
-        lineas = self._wrap(draw, titulo, fuente_titulo, 720)
+        titulo_completo = " ".join(
+            str(
+                metadata.get(
+                    "title",
+                    "El futuro de la IA",
+                )
+            ).split()
+        )
 
-        y = 170
-        for linea in lineas:
-            draw.text(
-                (86, y),
-                linea,
-                font=fuente_titulo,
-                fill=(255, 255, 255),
-                stroke_width=3,
-                stroke_fill=(0, 0, 0),
+        gancho = self._texto_corto(
+            titulo_completo
+        )
+
+        tamano_gancho = 112
+        fuente_gancho = self._fuente(
+            tamano_gancho,
+            bold=True,
+        )
+
+        lineas_gancho = self._wrap(
+            draw,
+            gancho,
+            fuente_gancho,
+            590,
+        )
+
+        while (
+            len(lineas_gancho) > 2
+            and tamano_gancho > 72
+        ):
+            tamano_gancho -= 6
+
+            fuente_gancho = self._fuente(
+                tamano_gancho,
+                bold=True,
             )
-            y += 88
 
-        # Sello "DOCUMENTAL IA".
+            lineas_gancho = self._wrap(
+                draw,
+                gancho,
+                fuente_gancho,
+                590,
+            )
+
+        lineas_gancho = (
+            lineas_gancho[:2]
+        )
+
+        y = 174
+
+        for indice, linea in enumerate(
+            lineas_gancho
+        ):
+            es_ultima = (
+                indice
+                == len(lineas_gancho) - 1
+            )
+
+            draw.text(
+                (
+                    82,
+                    y,
+                ),
+                linea,
+                font=fuente_gancho,
+                fill=(
+                    (
+                        245,
+                        45,
+                        65,
+                    )
+                    if es_ultima
+                    else (
+                        255,
+                        255,
+                        255,
+                    )
+                ),
+                stroke_width=4,
+                stroke_fill=(
+                    0,
+                    0,
+                    0,
+                ),
+            )
+
+            y += (
+                tamano_gancho
+                + 18
+            )
+
+        fuente_sello = self._fuente(
+            25,
+            bold=True,
+        )
+
         draw.rounded_rectangle(
-            (86, 500, 392, 566),
-            radius=16,
-            fill=(118, 55, 238),
+            (
+                82,
+                498,
+                320,
+                554,
+            ),
+            radius=15,
+            fill=(
+                0,
+                174,
+                214,
+            ),
         )
+
         draw.text(
-            (116, 516),
-            "DOCUMENTAL IA",
+            (
+                108,
+                512,
+            ),
+            "DOCUMENTAL",
             font=fuente_sello,
-            fill=(255, 255, 255),
+            fill=(
+                255,
+                255,
+                255,
+            ),
         )
 
-        # Sello "AVANCES IA".
-        draw.rounded_rectangle(
-            (418, 500, 690, 566),
-            radius=16,
-            fill=(0, 174, 214),
-        )
-        draw.text(
-            (456, 516),
-            "AVANCES IA",
-            font=fuente_sello,
-            fill=(255, 255, 255),
+        tamano_pie = 38
+        fuente_pie = self._fuente(
+            tamano_pie,
+            bold=True,
         )
 
-        draw.text(
-            (70, 646),
-            "CIENCIA ? TECNOLOG?A ? FUTURO",
-            font=fuente_pie,
-            fill=(242, 244, 255),
+        lineas_pie = self._wrap(
+            draw,
+            titulo_completo,
+            fuente_pie,
+            940,
         )
 
-        imagen = imagen.convert("RGB")
+        while (
+            len(lineas_pie) > 2
+            and tamano_pie > 28
+        ):
+            tamano_pie -= 2
+
+            fuente_pie = self._fuente(
+                tamano_pie,
+                bold=True,
+            )
+
+            lineas_pie = self._wrap(
+                draw,
+                titulo_completo,
+                fuente_pie,
+                940,
+            )
+
+        lineas_pie = lineas_pie[:2]
+        y_pie = 586
+
+        for linea in lineas_pie:
+            caja = draw.textbbox(
+                (
+                    0,
+                    0,
+                ),
+                linea,
+                font=fuente_pie,
+                stroke_width=2,
+            )
+
+            ancho_linea = (
+                caja[2]
+                - caja[0]
+            )
+
+            x_pie = max(
+                55,
+                (
+                    self.ANCHO
+                    - ancho_linea
+                )
+                // 2,
+            )
+
+            draw.text(
+                (
+                    x_pie,
+                    y_pie,
+                ),
+                linea,
+                font=fuente_pie,
+                fill=(
+                    247,
+                    248,
+                    255,
+                ),
+                stroke_width=2,
+                stroke_fill=(
+                    0,
+                    0,
+                    0,
+                ),
+            )
+
+            y_pie += (
+                tamano_pie
+                + 8
+            )
+
+        imagen = imagen.convert(
+            "RGB"
+        )
+
         imagen.save(
             salida,
             "JPEG",
@@ -304,9 +690,14 @@ class GeneradorMiniaturaYouTube:
         )
 
         if frame.exists():
-            frame.unlink(missing_ok=True)
+            frame.unlink(
+                missing_ok=True
+            )
 
-        if salida.stat().st_size > 2 * 1024 * 1024:
+        if (
+            salida.stat().st_size
+            > 2 * 1024 * 1024
+        ):
             imagen.save(
                 salida,
                 "JPEG",
@@ -314,9 +705,12 @@ class GeneradorMiniaturaYouTube:
                 optimize=True,
             )
 
-        if salida.stat().st_size > 2 * 1024 * 1024:
+        if (
+            salida.stat().st_size
+            > 2 * 1024 * 1024
+        ):
             raise RuntimeError(
-                "La miniatura automática supera 2 MB."
+                "La miniatura automatica supera 2 MB."
             )
 
         return salida, True
