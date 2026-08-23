@@ -119,26 +119,30 @@ class GeneradorShorts:
         return max(archivos, key=lambda ruta: ruta.stat().st_mtime)
 
     def _buscar_video(self) -> Path:
+        """Prefiere el video limpio para evitar subtitulos duplicados."""
         patrones = (
-            "output/videos/render_*/video_final_subtitulado_musica.mp4",
-            "output/videos/render_*/video_final_musica.mp4",
             "output/videos/render_*/video_final.mp4",
+            "output/videos/render_*/video_final_musica.mp4",
+            "output/videos/render_*/video_final_subtitulado_musica.mp4",
         )
-        candidatos: list[Path] = []
 
         for patron in patrones:
-            candidatos.extend(
+            candidatos = [
                 ruta
                 for ruta in self.project_root.glob(patron)
-                if ruta.is_file() and ruta.stat().st_size > 0
-            )
+                if ruta.is_file()
+                and ruta.stat().st_size > 0
+            ]
 
-        if not candidatos:
-            raise FileNotFoundError(
-                "No se encontro un video final para generar Shorts."
-            )
+            if candidatos:
+                return max(
+                    candidatos,
+                    key=lambda ruta: ruta.stat().st_mtime,
+                )
 
-        return max(candidatos, key=lambda ruta: ruta.stat().st_mtime)
+        raise FileNotFoundError(
+            "No se encontro un video final para generar Shorts."
+        )
 
     def _buscar_srt(self) -> Path:
         return self._latest(
@@ -750,26 +754,24 @@ class GeneradorShorts:
 
         srt_filtro = self._ruta_filtro(srt)
         filtro = (
-            "[0:v]split=2[fondo][frente];"
+            "[0:v]setpts=PTS-STARTPTS,split=2[fondo][frente];"
             "[fondo]"
             "scale=1080:1920:force_original_aspect_ratio=increase,"
             "crop=1080:1920,"
             "gblur=sigma=30,"
             "eq=brightness=-0.30:saturation=0.85[fondo_vertical];"
             "[frente]"
-            "scale=1080:-2,"
-            "drawbox=x=0:y=500:w=iw:h=110:"
-            "color=black@0.88:t=fill[frente_limpio];"
-            "[fondo_vertical][frente_limpio]"
+            "scale=1280:-2,"
+            "crop=1080:720[frente_limpio];"            "[fondo_vertical][frente_limpio]"
             "overlay=0:(H-h)/2[base];"
             "[base][1:v]overlay=0:0:shortest=1[marca];"
             f"[marca]subtitles='{srt_filtro}':"
-            "force_style='FontName=Arial,FontSize=34,"
+            "force_style='FontName=Arial,FontSize=11,"
             "PrimaryColour=&H00FFFFFF,"
             "OutlineColour=&H00000000,"
             "BackColour=&H88000000,"
-            "BorderStyle=3,Outline=2,Shadow=0,"
-            "Alignment=2,MarginL=80,MarginR=80,MarginV=300'[v]"
+            "BorderStyle=3,Outline=1,Shadow=0,"
+            "Alignment=2,MarginL=15,MarginR=15,MarginV=72'[v]"
         )
 
         comando = [
@@ -791,6 +793,10 @@ class GeneradorShorts:
             "[v]",
             "-map",
             "0:a:0?",
+            "-af",
+            "loudnorm=I=-14:TP=-1.5:LRA=7",
+            "-ar",
+            "48000",
             "-c:v",
             "libx264",
             "-preset",
