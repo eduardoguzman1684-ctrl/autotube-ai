@@ -442,6 +442,48 @@ class GeneradorShorts:
 
         reglas = (
             (
+                (
+                    "nuevos mundos",
+                    "formacion planetaria",
+                    "sistemas solares",
+                ),
+                "LA IA DESCUBRIÓ MILES DE MUNDOS OCULTOS",
+            ),
+            (
+                (
+                    "telescopios del futuro",
+                    "observatorios astronomicos",
+                    "autonomia total",
+                    "supernova lejana",
+                ),
+                "LOS TELESCOPIOS DEL FUTURO DECIDIRÁN SOLOS",
+            ),
+            (
+                (
+                    "galaxias espirales",
+                    "galaxias elipticas",
+                    "estructuras galacticas",
+                    "catalogacion masiva",
+                ),
+                "LA IA ESTÁ ORDENANDO EL UNIVERSO",
+            ),
+            (
+                (
+                    "big data",
+                    "montana de informacion",
+                    "registros de luz",
+                    "sondeo",
+                ),
+                "EL UNIVERSO GENERA MÁS DATOS DE LOS QUE PODEMOS LEER",
+            ),
+            (
+                (
+                    "materia oscura",
+                    "misterio de la fisica",
+                ),
+                "LA IA INTENTA DESCIFRAR LA MATERIA OSCURA",
+            ),
+            (
                 ("plagio", "derechos de autor", "imagenes protegidas"),
                 "¿LA IA APRENDE O ESTÁ COPIANDO?",
             ),
@@ -489,7 +531,7 @@ class GeneradorShorts:
                 "¿LA IA VA A QUITARTE EL TRABAJO?",
             ),
             (
-                ("datos", "privacidad", "informacion personal"),
+                ("datos personales", "tus datos", "privacidad", "informacion personal"),
                 "TUS DATOS ESTÁN ALIMENTANDO A LA IA",
             ),
             (
@@ -552,9 +594,6 @@ class GeneradorShorts:
             total += extra
 
         gancho = " ".join(salida).strip(" .,:;-")
-
-        if len(" ".join(palabras)) > 68:
-            gancho = "ESTO CAMBIÓ PARA SIEMPRE EL FUTURO DE LA IA"
 
         return (gancho or "LA IA ESTA CAMBIANDO TODO").upper()
 
