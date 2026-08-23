@@ -723,20 +723,57 @@ class GeneradorVoz:
         guion = contenido["guion"]
         segmentos = self.construir_segmentos(guion)
 
-        marca_tiempo = datetime.now().strftime(
-            "%Y%m%d_%H%M%S"
-        )
-
-        carpeta = (
+        raiz_audio = (
             output_dir
             / "audio"
-            / f"narracion_{marca_tiempo}"
         )
 
-        carpeta.mkdir(
+        raiz_audio.mkdir(
             parents=True,
             exist_ok=True,
         )
+
+        carpetas_parciales = sorted(
+            [
+                ruta
+                for ruta in raiz_audio.glob(
+                    "narracion_*"
+                )
+                if (
+                    ruta.is_dir()
+                    and not (
+                        ruta
+                        / "manifest.json"
+                    ).exists()
+                    and ruta.stat().st_mtime
+                    >= ruta_guion.stat().st_mtime
+                )
+            ],
+            key=lambda ruta: ruta.stat().st_mtime,
+            reverse=True,
+        )
+
+        if carpetas_parciales:
+            carpeta = carpetas_parciales[0]
+
+            print(
+                "Reanudando narracion parcial: "
+                f"{carpeta}"
+            )
+        else:
+            marca_tiempo = datetime.now().strftime(
+                "%Y%m%d_%H%M%S"
+            )
+
+            carpeta = (
+                raiz_audio
+                / f"narracion_{marca_tiempo}"
+            )
+
+            carpeta.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
 
         resultados: list[dict[str, Any]] = []
         archivos_audio: list[Path] = []
@@ -754,10 +791,21 @@ class GeneradorVoz:
                 / f"{posicion:02d}_{nombre}.mp3"
             )
 
-            print(
-                f"Generando {posicion}/{len(segmentos)}: "
-                f"{segmento['titulo']}"
+            reutilizar_archivo = (
+                archivo.is_file()
+                and archivo.stat().st_size > 0
             )
+
+            if reutilizar_archivo:
+                print(
+                    f"Reutilizando {posicion}/{len(segmentos)}: "
+                    f"{segmento['titulo']}"
+                )
+            else:
+                print(
+                    f"Generando {posicion}/{len(segmentos)}: "
+                    f"{segmento['titulo']}"
+                )
 
             texto_original = str(
                 segmento["texto"]
@@ -769,10 +817,13 @@ class GeneradorVoz:
                 )
             )
 
-            marcas_palabras = await self.generar_segmento(
-                texto=texto_voz_normalizado,
-                destino=archivo,
-            )
+            if reutilizar_archivo:
+                marcas_palabras = []
+            else:
+                marcas_palabras = await self.generar_segmento(
+                    texto=texto_voz_normalizado,
+                    destino=archivo,
+                )
 
             duracion = obtener_duracion_audio(
                 archivo

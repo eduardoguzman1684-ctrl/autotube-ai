@@ -129,8 +129,7 @@ class GeminiClient:
 
             except (
                 errors.ServerError,
-                httpx.TimeoutException,
-                httpx.ConnectError,
+                httpx.TransportError,
             ) as error:
                 ultimo_error = error
 
