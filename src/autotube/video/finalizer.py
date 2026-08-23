@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 import shutil
 import struct
 import subprocess
@@ -181,6 +182,44 @@ class FinalizadorVideo:
             "amix=inputs=2:duration=first:dropout_transition=2[a]"
         )
 
+        codificador_video = os.getenv(
+            "AUTOTUBE_VIDEO_ENCODER",
+            "libx264",
+        ).strip().lower()
+
+        if codificador_video == "h264_qsv":
+            filtro_subtitulos += ",format=nv12"
+
+            opciones_video = [
+                "-c:v",
+                "h264_qsv",
+                "-preset",
+                "veryfast",
+                "-global_quality",
+                os.getenv(
+                    "AUTOTUBE_QSV_QUALITY",
+                    "20",
+                ),
+            ]
+
+            print(
+                "Aceleracion de video: "
+                "Intel Quick Sync"
+            )
+        else:
+            opciones_video = [
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "18",
+            ]
+
+            print(
+                "Codificacion de video: "
+                "libx264 por CPU"
+            )
         comando = [
             ffmpeg,
             "-y",
@@ -198,12 +237,7 @@ class FinalizadorVideo:
             "0:v:0",
             "-map",
             "[a]",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "fast",
-            "-crf",
-            "18",
+            *opciones_video,
             "-c:a",
             "aac",
             "-b:a",
