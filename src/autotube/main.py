@@ -29,6 +29,8 @@ from autotube.video.subtitle_generator import (
     cargar_audio_para_subtitulos,
 )
 from autotube.video.finalizer import FinalizadorVideo
+from autotube.video.shorts_generator import GeneradorShorts
+# SHORTS_AUTOMATICOS_INTEGRADOS_V1
 from autotube.content.youtube_metadata import GeneradorMetadataYouTube
 from autotube.content.thumbnail_generator import GeneradorMiniaturaYouTube
 from autotube.visuals.tutorial_capture import (
@@ -318,6 +320,31 @@ def crear_parser() -> argparse.ArgumentParser:
     )
 
 
+    shorts_parser = subcomandos.add_parser(
+        "shorts",
+        help="Genera Shorts verticales desde el documental mas reciente.",
+    )
+
+    shorts_parser.add_argument(
+        "--cantidad",
+        type=int,
+        default=4,
+        help="Cantidad de Shorts que se generaran.",
+    )
+
+    shorts_parser.add_argument(
+        "--duracion",
+        type=float,
+        default=42.0,
+        help="Duracion aproximada de cada Short.",
+    )
+
+    shorts_parser.add_argument(
+        "--solo-plan",
+        action="store_true",
+        help="Selecciona los fragmentos sin renderizar videos.",
+    )
+
     run_parser = subcomandos.add_parser(
         "run",
         help="Ejecuta autom?ticamente el pipeline completo de producci?n.",
@@ -380,6 +407,26 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Contin?a desde el ?ltimo paso completado.",
     )
 
+
+    run_parser.add_argument(
+        "--sin-shorts",
+        action="store_true",
+        help="Omite la generacion automatica de Shorts.",
+    )
+
+    run_parser.add_argument(
+        "--cantidad-shorts",
+        type=int,
+        default=4,
+        help="Cantidad de Shorts generados por documental.",
+    )
+
+    run_parser.add_argument(
+        "--duracion-short",
+        type=float,
+        default=42.0,
+        help="Duracion aproximada de cada Short.",
+    )
 
     tutorial_parser = subcomandos.add_parser(
         "tutorial-capture",
@@ -1135,6 +1182,41 @@ def generar_subtitulos(argumentos: argparse.Namespace) -> None:
 
 
 
+
+
+def generar_shorts(argumentos: argparse.Namespace) -> None:
+    """Genera Shorts verticales desde el documental mas reciente."""
+    project_root = Path(__file__).resolve().parents[2]
+    generador = GeneradorShorts(project_root=project_root)
+    resultado = generador.generar(
+        cantidad=argumentos.cantidad,
+        duracion_objetivo=argumentos.duracion,
+        solo_plan=argumentos.solo_plan,
+    )
+
+    print()
+    print("GENERADOR DE SHORTS")
+    print("=" * 72)
+    print("Video:", resultado["video_origen"])
+    print("Resolucion:", resultado["resolucion"])
+    print("Cantidad:", resultado["cantidad"])
+
+    for short in resultado["shorts"]:
+        print()
+        print(
+            f"{short['orden']}. {short['gancho']} | "
+            f"{short['duracion_segundos']:.1f}s | "
+            f"score={short['puntuacion']:.1f}"
+        )
+
+        if short["archivo"]:
+            print("   Archivo:", short["archivo"])
+
+    print()
+    print("Manifiesto:", resultado["manifiesto"])
+    print("=" * 72)
+
+
 def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
     """Ejecuta de principio a fin la producci?n autom?tica del video."""
 
@@ -1418,7 +1500,7 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
     print("ETAPA FINAL AUTOMATICA")
     print("=" * 72)
 
-    print("1/4 Finalizando video con subtitulos y musica...")
+    print("1/5 Finalizando video con subtitulos y musica...")
     finalizador = FinalizadorVideo(
         project_root=project_root,
     )
@@ -1430,7 +1512,29 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
         "GENERADO" if video_generado else "REUTILIZADO",
     )
 
-    print("2/4 Generando metadata y capitulos de YouTube...")
+
+
+    if argumentos.sin_shorts:
+        print("2/5 Shorts omitidos por --sin-shorts.")
+    else:
+        print("2/5 Generando Shorts verticales...")
+        resultado_shorts = GeneradorShorts(
+            project_root=project_root,
+        ).generar(
+            cantidad=argumentos.cantidad_shorts,
+            duracion_objetivo=argumentos.duracion_short,
+            solo_plan=False,
+        )
+        print(
+            "Shorts generados:",
+            resultado_shorts["cantidad"],
+        )
+        print(
+            "Manifiesto de Shorts:",
+            resultado_shorts["manifiesto"],
+        )
+
+    print("3/5 Generando metadata y capitulos de YouTube...")
     generador_metadata = GeneradorMetadataYouTube(
         project_root=project_root,
     )
@@ -1438,7 +1542,7 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
     print("Titulo:", metadata["title"])
     print("Metadata:", metadata_path)
 
-    print("3/4 Generando miniatura automatica...")
+    print("4/5 Generando miniatura automatica...")
     generador_miniatura = GeneradorMiniaturaYouTube(
         project_root=project_root,
     )
@@ -1451,9 +1555,9 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
     )
 
     if argumentos.sin_publicar:
-        print("4/4 YouTube omitido por --sin-publicar.")
+        print("5/5 YouTube omitido por --sin-publicar.")
     else:
-        print("4/4 Publicando en YouTube como PRIVADO...")
+        print("5/5 Publicando en YouTube como PRIVADO...")
         publicador = project_root / "tools" / "youtube_publish_all.py"
         subprocess.run(
             [
@@ -1592,6 +1696,11 @@ def main() -> None:
 
         if argumentos.comando == "render":
             renderizar_video(argumentos)
+            return
+
+
+        if argumentos.comando == "shorts":
+            generar_shorts(argumentos)
             return
 
         if argumentos.comando == "subtitles":
