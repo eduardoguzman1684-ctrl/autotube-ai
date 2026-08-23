@@ -221,14 +221,59 @@ class VerificadorVisualGemini:
                 x = columna * ancho_celda
                 y = fila * alto_celda
 
-                with Image.open(Path(ruta_imagen)) as original:
-                    imagen = ImageOps.fit(
-                        original.convert("RGB"),
+                try:
+                    with Image.open(
+                        Path(ruta_imagen)
+                    ) as original:
+                        original.load()
+
+                        imagen = ImageOps.fit(
+                            original.convert("RGB"),
+                            (
+                                ancho_celda,
+                                alto_celda,
+                            ),
+                            method=Image.Resampling.LANCZOS,
+                        )
+
+                except (OSError, ValueError) as error:
+                    ruta_danada = Path(
+                        ruta_imagen
+                    )
+
+                    print(
+                        "  AVISO imagen candidata danada: "
+                        f"{ruta_danada.name}. "
+                        "Se omitira y se continuara."
+                    )
+
+                    try:
+                        ruta_danada.unlink(
+                            missing_ok=True
+                        )
+                    except OSError:
+                        pass
+
+                    imagen = Image.new(
+                        "RGB",
                         (
                             ancho_celda,
                             alto_celda,
                         ),
-                        method=Image.Resampling.LANCZOS,
+                        color=(55, 18, 28),
+                    )
+
+                    dibujo_error = ImageDraw.Draw(
+                        imagen
+                    )
+
+                    dibujo_error.text(
+                        (
+                            70,
+                            alto_celda // 2,
+                        ),
+                        "IMAGEN NO DISPONIBLE",
+                        fill=(255, 210, 215),
                     )
 
                 lamina.paste(imagen, (x, y))
