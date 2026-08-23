@@ -320,6 +320,25 @@ def crear_parser() -> argparse.ArgumentParser:
     )
 
 
+    analytics_parser = subcomandos.add_parser(
+        "analytics",
+        help="Genera un informe de rendimiento de YouTube Analytics.",
+    )
+
+    analytics_parser.add_argument(
+        "--dias",
+        type=int,
+        default=28,
+        help="Cantidad de dias que se analizaran.",
+    )
+
+    analytics_parser.add_argument(
+        "--max-videos",
+        type=int,
+        default=50,
+        help="Cantidad maxima de videos incluidos.",
+    )
+
     shorts_parser = subcomandos.add_parser(
         "shorts",
         help="Genera Shorts verticales desde el documental mas reciente.",
@@ -1184,6 +1203,39 @@ def generar_subtitulos(argumentos: argparse.Namespace) -> None:
 
 
 
+def generar_analitica(argumentos: argparse.Namespace) -> None:
+    """Ejecuta el informe local de YouTube Analytics."""
+    import subprocess
+    import sys
+
+    project_root = Path(__file__).resolve().parents[2]
+    herramienta = (
+        project_root
+        / "tools"
+        / "youtube_analytics_report.py"
+    )
+
+    if not herramienta.exists():
+        raise FileNotFoundError(
+            f"No existe la herramienta de Analytics: {herramienta}"
+        )
+
+    comando = [
+        sys.executable,
+        str(herramienta),
+        "--dias",
+        str(argumentos.dias),
+        "--max-videos",
+        str(argumentos.max_videos),
+    ]
+
+    subprocess.run(
+        comando,
+        cwd=project_root,
+        check=True,
+    )
+
+
 def generar_shorts(argumentos: argparse.Namespace) -> None:
     """Genera Shorts verticales desde el documental mas reciente."""
     project_root = Path(__file__).resolve().parents[2]
@@ -1735,6 +1787,10 @@ def main() -> None:
             renderizar_video(argumentos)
             return
 
+
+        if argumentos.comando == "analytics":
+            generar_analitica(argumentos)
+            return
 
         if argumentos.comando == "shorts":
             generar_shorts(argumentos)
