@@ -1,9 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import youtube_publish_all as publicador
 
@@ -22,74 +23,246 @@ def ultimo_manifiesto() -> Path:
 
     if not archivos:
         raise FileNotFoundError(
-            "No se encontró ningún manifiesto de Shorts."
+            "No se encontro ningun manifiesto de Shorts."
         )
 
-    return max(archivos, key=lambda ruta: ruta.stat().st_mtime)
+    return max(
+        archivos,
+        key=lambda ruta: ruta.stat().st_mtime,
+    )
 
 
-def guardar_estado(ruta: Path, estado: dict) -> None:
+def guardar_estado(ruta: Path, estado: dict[str, Any]) -> None:
+    estado["actualizado_en"] = (
+        datetime.now()
+        .astimezone()
+        .isoformat(timespec="seconds")
+    )
+
     ruta.write_text(
-        json.dumps(estado, ensure_ascii=False, indent=2),
+        json.dumps(
+            estado,
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
 
+def es_limite_subida(error: Exception) -> bool:
+    partes = [str(error)]
+
+    contenido = getattr(
+        error,
+        "content",
+        "",
+    )
+
+    if isinstance(contenido, bytes):
+        contenido = contenido.decode(
+            "utf-8",
+            errors="replace",
+        )
+
+    partes.append(str(contenido))
+    mensaje = " ".join(partes).lower()
+
+    indicadores = (
+        "uploadlimitexceeded",
+        "exceeded the number of videos",
+        "daily upload limit",
+        "upload limit reached",
+    )
+
+    return any(
+        indicador in mensaje
+        for indicador in indicadores
+    )
+
+
+def ordenes_pendientes(
+    shorts: list[dict[str, Any]],
+    publicaciones: dict[int, dict[str, Any]],
+) -> list[int]:
+    pendientes: list[int] = []
+
+    for elemento in shorts:
+        orden = int(
+            elemento.get(
+                "orden",
+                0,
+            )
+        )
+
+        registro = publicaciones.get(
+            orden,
+            {},
+        )
+
+        if not registro.get("video_id"):
+            pendientes.append(orden)
+
+    return pendientes
+
+
+def resolver_manifiesto(
+    argumento: str | None,
+) -> Path:
+    if not argumento:
+        return ultimo_manifiesto()
+
+    ruta = Path(argumento).expanduser()
+
+    if not ruta.is_absolute():
+        ruta = ROOT / ruta
+
+    ruta = ruta.resolve()
+
+    if not ruta.is_file():
+        raise FileNotFoundError(
+            f"No existe el manifiesto indicado: {ruta}"
+        )
+
+    return ruta
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
+
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Simula la publicación sin subir videos.",
+        help="Simula la publicacion sin subir videos.",
     )
+
+    parser.add_argument(
+        "--manifiesto",
+        default=None,
+        help=(
+            "Ruta del shorts_manifest.json que se "
+            "publicara o reanudara."
+        ),
+    )
+
     args = parser.parse_args()
 
-    manifiesto_ruta = ultimo_manifiesto()
-    datos = json.loads(
-        manifiesto_ruta.read_text(encoding="utf-8-sig")
+    manifiesto_ruta = resolver_manifiesto(
+        args.manifiesto
     )
-    shorts = datos.get("shorts", [])
 
-    if not isinstance(shorts, list) or not shorts:
+    datos = json.loads(
+        manifiesto_ruta.read_text(
+            encoding="utf-8-sig"
+        )
+    )
+
+    shorts_raw = datos.get(
+        "shorts",
+        [],
+    )
+
+    if not isinstance(shorts_raw, list) or not shorts_raw:
         raise RuntimeError(
-            "El manifiesto no contiene Shorts válidos."
+            "El manifiesto no contiene Shorts validos."
         )
 
-    estado_ruta = manifiesto_ruta.parent / "youtube_publish.json"
+    shorts: list[dict[str, Any]] = [
+        elemento
+        for elemento in shorts_raw
+        if isinstance(elemento, dict)
+    ]
+
+    if not shorts:
+        raise RuntimeError(
+            "El manifiesto no contiene Shorts validos."
+        )
+
+    estado_ruta = (
+        manifiesto_ruta.parent
+        / "youtube_publish.json"
+    )
 
     if estado_ruta.is_file():
         estado = json.loads(
-            estado_ruta.read_text(encoding="utf-8-sig")
+            estado_ruta.read_text(
+                encoding="utf-8-sig"
+            )
         )
     else:
         estado = {
-            "creado_en": datetime.now()
-            .astimezone()
-            .isoformat(timespec="seconds"),
-            "manifiesto": str(manifiesto_ruta),
+            "creado_en": (
+                datetime.now()
+                .astimezone()
+                .isoformat(timespec="seconds")
+            ),
+            "manifiesto": str(
+                manifiesto_ruta
+            ),
             "visibilidad": "private",
+            "estado": "pendiente",
             "publicaciones": [],
+            "pendientes": [
+                int(
+                    elemento.get(
+                        "orden",
+                        0,
+                    )
+                )
+                for elemento in shorts
+            ],
         }
 
     publicaciones = {
-        int(elemento.get("orden", 0)): elemento
-        for elemento in estado.get("publicaciones", [])
+        int(
+            elemento.get(
+                "orden",
+                0,
+            )
+        ): elemento
+        for elemento in estado.get(
+            "publicaciones",
+            [],
+        )
         if isinstance(elemento, dict)
     }
 
     print()
-    print("NEXON IA - PUBLICACIÓN DE SHORTS")
+    print("NEXON IA - PUBLICACION DE SHORTS")
     print("=" * 56)
     print(f"Manifiesto: {manifiesto_ruta}")
     print(f"Cantidad: {len(shorts)}")
     print("Visibilidad: private")
     print("=" * 56)
 
+    if not args.dry_run:
+        estado["estado"] = "en_progreso"
+        estado["pendientes"] = ordenes_pendientes(
+            shorts,
+            publicaciones,
+        )
+        guardar_estado(
+            estado_ruta,
+            estado,
+        )
+
     youtube = None
 
     for elemento in shorts:
-        orden = int(elemento.get("orden", 0))
-        archivo = Path(str(elemento.get("archivo", "")))
+        orden = int(
+            elemento.get(
+                "orden",
+                0,
+            )
+        )
+
+        archivo = Path(
+            str(
+                elemento.get(
+                    "archivo",
+                    "",
+                )
+            )
+        )
 
         if not archivo.is_file():
             raise FileNotFoundError(
@@ -97,13 +270,17 @@ def main() -> int:
             )
 
         titulo = str(
-            elemento.get("titulo", f"NEXON IA Short {orden}")
+            elemento.get(
+                "titulo",
+                f"NEXON IA Short {orden}",
+            )
         ).strip()
 
         if "#shorts" not in titulo.lower():
             titulo = f"{titulo} #Shorts"
 
         titulo = titulo[:100]
+
         descripcion = str(
             elemento.get(
                 "descripcion",
@@ -112,31 +289,46 @@ def main() -> int:
         )[:5000]
 
         print()
-        print(f"{orden}/{len(shorts)} {titulo}")
+        print(
+            f"{orden}/{len(shorts)} "
+            f"{titulo}"
+        )
         print(f"Archivo: {archivo}")
 
-        anterior = publicaciones.get(orden)
+        anterior = publicaciones.get(
+            orden
+        )
 
-        if anterior and anterior.get("video_id"):
+        if anterior and anterior.get(
+            "video_id"
+        ):
             print(
-                "OMITIDO: ya fue subido en una ejecución anterior."
+                "OMITIDO: ya fue subido en "
+                "una ejecucion anterior."
             )
-            print(f"https://youtu.be/{anterior['video_id']}")
+            print(
+                f"https://youtu.be/"
+                f"{anterior['video_id']}"
+            )
             continue
 
         if args.dry_run:
-            print("SIMULACIÓN: no se subirá.")
+            print(
+                "SIMULACION: no se subira."
+            )
             continue
 
         if youtube is None:
-            youtube = publicador.youtube_client()
+            youtube = (
+                publicador.youtube_client()
+            )
 
         metadata = {
             "title": titulo,
             "description": descripcion,
             "tags": [
                 "Inteligencia Artificial",
-                "Tecnología",
+                "Tecnologia",
                 "Ciencia",
                 "NEXON IA",
                 "Shorts",
@@ -145,42 +337,146 @@ def main() -> int:
             "language": "es",
         }
 
-        print("Subiendo en modo privado...")
-        video_id = publicador.upload_video(
-            youtube,
-            archivo,
-            metadata,
+        print(
+            "Subiendo en modo privado..."
         )
+
+        try:
+            video_id = (
+                publicador.upload_video(
+                    youtube,
+                    archivo,
+                    metadata,
+                )
+            )
+
+        except Exception as error:
+            if not es_limite_subida(
+                error
+            ):
+                raise
+
+            pendientes = ordenes_pendientes(
+                shorts,
+                publicaciones,
+            )
+
+            estado["estado"] = (
+                "pendiente_limite_youtube"
+            )
+            estado["motivo"] = (
+                "uploadLimitExceeded"
+            )
+            estado["limite_detectado_en"] = (
+                datetime.now()
+                .astimezone()
+                .isoformat(timespec="seconds")
+            )
+            estado["siguiente_orden"] = orden
+            estado["pendientes"] = pendientes
+            estado["publicaciones"] = [
+                publicaciones[clave]
+                for clave in sorted(
+                    publicaciones
+                )
+            ]
+
+            guardar_estado(
+                estado_ruta,
+                estado,
+            )
+
+            print()
+            print("=" * 56)
+            print(
+                "LIMITE DIARIO DE YOUTUBE ALCANZADO"
+            )
+            print(
+                "Los Shorts pendientes quedaron "
+                "guardados de forma segura."
+            )
+            print(
+                "Espera hasta 24 horas y ejecuta:"
+            )
+            print(
+                "python tools/youtube_publish_shorts.py "
+                f'--manifiesto "{manifiesto_ruta}"'
+            )
+            print(
+                f"Estado: {estado_ruta}"
+            )
+            print("=" * 56)
+
+            return 0
 
         registro = {
             "orden": orden,
             "video_id": video_id,
-            "url": f"https://youtu.be/{video_id}",
+            "url": (
+                f"https://youtu.be/{video_id}"
+            ),
             "titulo": titulo,
             "archivo": str(archivo),
-            "publicado_en": datetime.now()
-            .astimezone()
-            .isoformat(timespec="seconds"),
+            "publicado_en": (
+                datetime.now()
+                .astimezone()
+                .isoformat(timespec="seconds")
+            ),
             "visibilidad": "private",
         }
 
         publicaciones[orden] = registro
         estado["publicaciones"] = [
             publicaciones[clave]
-            for clave in sorted(publicaciones)
+            for clave in sorted(
+                publicaciones
+            )
         ]
-        guardar_estado(estado_ruta, estado)
-        print(f"SUBIDO: {registro['url']}")
+        estado["pendientes"] = (
+            ordenes_pendientes(
+                shorts,
+                publicaciones,
+            )
+        )
+
+        guardar_estado(
+            estado_ruta,
+            estado,
+        )
+
+        print(
+            f"SUBIDO: {registro['url']}"
+        )
 
     print()
     print("=" * 56)
 
     if args.dry_run:
-        print("SIMULACIÓN CORRECTA")
-        print("No se ha subido nada a YouTube.")
+        print("SIMULACION CORRECTA")
+        print(
+            "No se ha subido nada a YouTube."
+        )
+
     else:
-        print("PUBLICACIÓN DE SHORTS COMPLETADA")
-        print(f"Estado: {estado_ruta}")
+        estado["estado"] = "completado"
+        estado["pendientes"] = []
+        estado["completado_en"] = (
+            datetime.now()
+            .astimezone()
+            .isoformat(timespec="seconds")
+        )
+
+        guardar_estado(
+            estado_ruta,
+            estado,
+        )
+
+        print(
+            "PUBLICACION DE SHORTS COMPLETADA"
+        )
+        print(
+            f"Estado: {estado_ruta}"
+        )
 
     print("=" * 56)
     return 0
