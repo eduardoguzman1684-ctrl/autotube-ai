@@ -1500,7 +1500,7 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
     print("ETAPA FINAL AUTOMATICA")
     print("=" * 72)
 
-    print("1/5 Finalizando video con subtitulos y musica...")
+    print("1/6 Finalizando video con subtitulos y musica...")
     finalizador = FinalizadorVideo(
         project_root=project_root,
     )
@@ -1515,9 +1515,9 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
 
 
     if argumentos.sin_shorts:
-        print("2/5 Shorts omitidos por --sin-shorts.")
+        print("2/6 Shorts omitidos por --sin-shorts.")
     else:
-        print("2/5 Generando Shorts verticales...")
+        print("2/6 Generando Shorts verticales...")
         resultado_shorts = GeneradorShorts(
             project_root=project_root,
         ).generar(
@@ -1534,7 +1534,7 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
             resultado_shorts["manifiesto"],
         )
 
-    print("3/5 Generando metadata y capitulos de YouTube...")
+    print("3/6 Generando metadata y capitulos de YouTube...")
     generador_metadata = GeneradorMetadataYouTube(
         project_root=project_root,
     )
@@ -1542,7 +1542,7 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
     print("Titulo:", metadata["title"])
     print("Metadata:", metadata_path)
 
-    print("4/5 Generando miniatura automatica...")
+    print("4/6 Generando miniatura automatica...")
     generador_miniatura = GeneradorMiniaturaYouTube(
         project_root=project_root,
     )
@@ -1555,14 +1555,51 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
     )
 
     if argumentos.sin_publicar:
-        print("5/5 YouTube omitido por --sin-publicar.")
+        print("5/6 YouTube omitido por --sin-publicar.")
     else:
-        print("5/5 Publicando en YouTube como PRIVADO...")
+        print("5/6 Publicando documental en YouTube como PRIVADO...")
         publicador = project_root / "tools" / "youtube_publish_all.py"
         subprocess.run(
             [
                 sys.executable,
                 str(publicador),
+            ],
+            cwd=project_root,
+            check=True,
+        )
+
+    if argumentos.sin_publicar:
+        print(
+            "6/6 Publicacion de Shorts omitida "
+            "por --sin-publicar."
+        )
+    elif argumentos.sin_shorts:
+        print(
+            "6/6 Publicacion de Shorts omitida "
+            "por --sin-shorts."
+        )
+    else:
+        print(
+            "6/6 Publicando Shorts en YouTube "
+            "como PRIVADOS..."
+        )
+
+        publicador_shorts = (
+            project_root
+            / "tools"
+            / "youtube_publish_shorts.py"
+        )
+
+        if not publicador_shorts.is_file():
+            raise FileNotFoundError(
+                "No existe el publicador de Shorts: "
+                f"{publicador_shorts}"
+            )
+
+        subprocess.run(
+            [
+                sys.executable,
+                str(publicador_shorts),
             ],
             cwd=project_root,
             check=True,
