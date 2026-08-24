@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import ssl
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -459,6 +460,15 @@ def main() -> int:
         action="store_true",
     )
 
+    parser.add_argument(
+        "--control-profundo",
+        action="store_true",
+        help=(
+            "Ejecuta tambien el analisis completo "
+            "de negro, silencio y volumen."
+        ),
+    )
+
     args = parser.parse_args()
 
     metadata = load_metadata()
@@ -518,6 +528,44 @@ def main() -> int:
             manifiesto_existente,
         )
         return 0
+
+    control_multimedia = (
+        ROOT
+        / "tools"
+        / "media_quality_check.py"
+    )
+
+    if not control_multimedia.is_file():
+        raise FileNotFoundError(
+            "No existe el control multimedia: "
+            f"{control_multimedia}"
+        )
+
+    comando_control = [
+        sys.executable,
+        str(control_multimedia),
+        "--video",
+        str(video),
+        "--subtitulos",
+        str(srt),
+        "--miniatura",
+        str(thumbnail),
+        "--metadata",
+        str(METADATA_FILE),
+    ]
+
+    if args.control_profundo:
+        comando_control.append(
+            "--profundo"
+        )
+
+    print()
+    print("CONTROL TECNICO PREVIO A YOUTUBE")
+    subprocess.run(
+        comando_control,
+        cwd=ROOT,
+        check=True,
+    )
 
     if args.dry_run:
         print()

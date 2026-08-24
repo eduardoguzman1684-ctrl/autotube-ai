@@ -320,6 +320,35 @@ def crear_parser() -> argparse.ArgumentParser:
     )
 
 
+    media_check_parser = subcomandos.add_parser(
+        "media-check",
+        help=(
+            "Valida video, audio, subtitulos, "
+            "miniatura y metadata."
+        ),
+    )
+
+    media_check_parser.add_argument(
+        "--validar-shorts",
+        action="store_true",
+        help="Valida tambien el lote de Shorts reciente.",
+    )
+
+    media_check_parser.add_argument(
+        "--manifiesto-shorts",
+        default=None,
+        help="Ruta opcional del shorts_manifest.json.",
+    )
+
+    media_check_parser.add_argument(
+        "--profundo",
+        action="store_true",
+        help=(
+            "Busca tramos negros, silencios "
+            "y niveles anormales de audio."
+        ),
+    )
+
     analytics_parser = subcomandos.add_parser(
         "analytics",
         help="Genera un informe de rendimiento de YouTube Analytics.",
@@ -432,6 +461,16 @@ def crear_parser() -> argparse.ArgumentParser:
         "--omitir-doctor",
         action="store_true",
         help="No ejecuta la comprobaci?n inicial del proyecto.",
+    )
+
+
+    run_parser.add_argument(
+        "--control-profundo",
+        action="store_true",
+        help=(
+            "Ejecuta el control multimedia profundo "
+            "antes de publicar."
+        ),
     )
 
 
@@ -1257,6 +1296,70 @@ def generar_analitica(argumentos: argparse.Namespace) -> None:
     )
 
 
+def ejecutar_control_multimedia(
+    argumentos: argparse.Namespace,
+) -> None:
+    """Ejecuta el control tecnico de la produccion reciente."""
+    import subprocess
+    import sys
+
+    project_root = Path(__file__).resolve().parents[2]
+    herramienta = (
+        project_root
+        / "tools"
+        / "media_quality_check.py"
+    )
+
+    if not herramienta.is_file():
+        raise FileNotFoundError(
+            "No existe el control multimedia: "
+            f"{herramienta}"
+        )
+
+    comando = [
+        sys.executable,
+        str(herramienta),
+    ]
+
+    if getattr(
+        argumentos,
+        "validar_shorts",
+        False,
+    ):
+        comando.append(
+            "--validar-shorts"
+        )
+
+        manifiesto = getattr(
+            argumentos,
+            "manifiesto_shorts",
+            None,
+        )
+
+        if manifiesto:
+            comando.extend(
+                [
+                    "--manifiesto-shorts",
+                    str(manifiesto),
+                ]
+            )
+
+    if getattr(
+        argumentos,
+        "profundo",
+        False,
+    ):
+        comando.append(
+            "--profundo"
+        )
+
+    subprocess.run(
+        comando,
+        cwd=project_root,
+        check=True,
+    )
+
+
 def gestionar_cola_publicacion(
     argumentos: argparse.Namespace,
 ) -> None:
@@ -1673,6 +1776,40 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
         "GENERADA" if miniatura_generada else "REUTILIZADA",
     )
 
+    control_multimedia = (
+        project_root
+        / "tools"
+        / "media_quality_check.py"
+    )
+
+    if not control_multimedia.is_file():
+        raise FileNotFoundError(
+            "No existe el control multimedia: "
+            f"{control_multimedia}"
+        )
+
+    comando_control = [
+        sys.executable,
+        str(control_multimedia),
+    ]
+
+    if not argumentos.sin_shorts:
+        comando_control.append(
+            "--validar-shorts"
+        )
+
+    if argumentos.control_profundo:
+        comando_control.append(
+            "--profundo"
+        )
+
+    print("Ejecutando control tecnico multimedia...")
+    subprocess.run(
+        comando_control,
+        cwd=project_root,
+        check=True,
+    )
+
     gestor_cola = (
         project_root
         / "tools"
@@ -1882,6 +2019,10 @@ def main() -> None:
             renderizar_video(argumentos)
             return
 
+
+        if argumentos.comando == "media-check":
+            ejecutar_control_multimedia(argumentos)
+            return
 
         if argumentos.comando in {
             "publish-status",

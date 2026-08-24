@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -284,6 +286,35 @@ def main() -> int:
     print(f"Cantidad: {len(shorts)}")
     print("Visibilidad: private")
     print("=" * 56)
+
+    control_multimedia = (
+        ROOT
+        / "tools"
+        / "media_quality_check.py"
+    )
+
+    if not control_multimedia.is_file():
+        raise FileNotFoundError(
+            "No existe el control multimedia: "
+            f"{control_multimedia}"
+        )
+
+    print()
+    print(
+        "CONTROL TECNICO PREVIO A LOS SHORTS"
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(control_multimedia),
+            "--validar-shorts",
+            "--manifiesto-shorts",
+            str(manifiesto_ruta),
+        ],
+        cwd=ROOT,
+        check=True,
+    )
 
     if not args.dry_run:
         estado["estado"] = "en_progreso"
