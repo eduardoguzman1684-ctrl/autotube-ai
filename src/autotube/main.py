@@ -335,6 +335,34 @@ def crear_parser() -> argparse.ArgumentParser:
     )
 
 
+
+    storage_parser = subcomandos.add_parser(
+        "storage-clean",
+        help=(
+            "Audita y elimina salidas regenerables "
+            "sin tocar producciones protegidas."
+        ),
+    )
+
+    storage_parser.add_argument(
+        "--confirmar",
+        action="store_true",
+        help=(
+            "Elimina realmente los candidatos seguros. "
+            "Sin esta opcion solo se simula."
+        ),
+    )
+
+
+    storage_parser.add_argument(
+        "--publicados",
+        action="store_true",
+        help=(
+            "Incluye MP4 publicados cuyo video_id "
+            "y SHA256 hayan sido verificados."
+        ),
+    )
+
     guardian_parser = subcomandos.add_parser(
         "guardian-run",
         help=(
@@ -1755,6 +1783,43 @@ def generar_dashboard(
 
 
 
+
+def limpiar_almacenamiento(
+    argumentos: argparse.Namespace,
+) -> None:
+    """Audita o ejecuta la limpieza segura de output."""
+    from autotube.operations.storage_cleaner import (
+        LimpiadorAlmacenamiento,
+    )
+
+    project_root = Path(__file__).resolve().parents[2]
+
+    limpiador = LimpiadorAlmacenamiento(
+        project_root=project_root,
+    )
+
+    resultado = limpiador.ejecutar(
+        confirmar=argumentos.confirmar,
+        incluir_publicados=argumentos.publicados,
+    )
+
+    limpiador.imprimir(
+        resultado
+    )
+
+    if not argumentos.confirmar:
+        print(
+            "SIMULACION: revisa la lista y agrega "
+            "--confirmar solo si estas de acuerdo."
+        )
+        return
+
+    if resultado["informe"]["errores"]:
+        raise RuntimeError(
+            "La limpieza termino con uno o mas errores."
+        )
+
+
 def ejecutar_guardian_automatico(
     argumentos: argparse.Namespace,
 ) -> None:
@@ -2875,6 +2940,11 @@ def main() -> None:
             generar_dashboard(argumentos)
             return
 
+
+
+        if argumentos.comando == "storage-clean":
+            limpiar_almacenamiento(argumentos)
+            return
 
         if argumentos.comando == "guardian-run":
             ejecutar_guardian_automatico(argumentos)
