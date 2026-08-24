@@ -199,6 +199,7 @@ def main() -> int:
         "views,"
         "estimatedMinutesWatched,"
         "averageViewDuration,"
+        "averageViewPercentage,"
         "subscribersGained,"
         "subscribersLost"
     )
@@ -219,6 +220,7 @@ def main() -> int:
             "views": 0,
             "estimatedMinutesWatched": 0,
             "averageViewDuration": 0,
+            "averageViewPercentage": 0,
             "subscribersGained": 0,
             "subscribersLost": 0,
         }
@@ -258,6 +260,7 @@ def main() -> int:
         "views,"
         "estimatedMinutesWatched,"
         "averageViewDuration,"
+        "averageViewPercentage,"
         "likes,"
         "comments,"
         "shares,"
@@ -368,6 +371,10 @@ def main() -> int:
         f"{formato_duracion(resumen.get('averageViewDuration', 0))}"
     )
     print(
+        "Retencion media: "
+        f"{float(resumen.get('averageViewPercentage', 0)):.1f}%"
+    )
+    print(
         "Suscriptores ganados: "
         f"{resumen.get('subscribersGained', 0)}"
     )
@@ -400,6 +407,10 @@ def main() -> int:
             f"   Vistas: {video.get('views', 0)} | "
             "Duracion media: "
             f"{formato_duracion(video.get('averageViewDuration', 0))}"
+        )
+        print(
+            "   Retencion: "
+            f"{float(video.get('averageViewPercentage', 0)):.1f}%"
         )
         print(f"   {video.get('url', '')}")
 

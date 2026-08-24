@@ -389,6 +389,20 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Simula la reanudacion sin subir videos.",
     )
 
+    analytics_insights_parser = subcomandos.add_parser(
+        "analytics-insights",
+        help=(
+            "Convierte Analytics en recomendaciones "
+            "para proximos contenidos."
+        ),
+    )
+
+    analytics_insights_parser.add_argument(
+        "--reporte",
+        default=None,
+        help="Informe JSON; usa el mas reciente por defecto.",
+    )
+
     shorts_parser = subcomandos.add_parser(
         "shorts",
         help="Genera Shorts verticales desde el documental mas reciente.",
@@ -1263,6 +1277,52 @@ def generar_subtitulos(argumentos: argparse.Namespace) -> None:
 
 
 
+def generar_insights_analitica(
+    argumentos: argparse.Namespace,
+) -> None:
+    """Genera el perfil estrategico desde Analytics."""
+    import subprocess
+    import sys
+
+    project_root = Path(__file__).resolve().parents[2]
+    herramienta = (
+        project_root
+        / "tools"
+        / "youtube_analytics_insights.py"
+    )
+
+    if not herramienta.is_file():
+        raise FileNotFoundError(
+            "No existe el motor de insights: "
+            f"{herramienta}"
+        )
+
+    comando = [
+        sys.executable,
+        str(herramienta),
+    ]
+
+    reporte = getattr(
+        argumentos,
+        "reporte",
+        None,
+    )
+
+    if reporte:
+        comando.extend(
+            [
+                "--reporte",
+                str(reporte),
+            ]
+        )
+
+    subprocess.run(
+        comando,
+        cwd=project_root,
+        check=True,
+    )
+
+
 def generar_analitica(argumentos: argparse.Namespace) -> None:
     """Ejecuta el informe local de YouTube Analytics."""
     import subprocess
@@ -1293,6 +1353,15 @@ def generar_analitica(argumentos: argparse.Namespace) -> None:
         comando,
         cwd=project_root,
         check=True,
+    )
+
+    print()
+    print("Actualizando aprendizaje estrategico...")
+
+    generar_insights_analitica(
+        argparse.Namespace(
+            reporte=None,
+        )
     )
 
 
@@ -2034,6 +2103,10 @@ def main() -> None:
 
         if argumentos.comando == "analytics":
             generar_analitica(argumentos)
+            return
+
+        if argumentos.comando == "analytics-insights":
+            generar_insights_analitica(argumentos)
             return
 
         if argumentos.comando == "shorts":

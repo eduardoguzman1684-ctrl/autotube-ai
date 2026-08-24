@@ -690,6 +690,59 @@ def filtrar_ideas_repetidas(
     )
 
 
+def cargar_contexto_estrategico(
+    data_dir: Path | None,
+) -> str:
+    """Carga aprendizaje del canal sin impedir generar ideas."""
+    predeterminado = (
+        "APRENDIZAJE REAL DEL CANAL:\n"
+        "- No existe todavia un perfil estrategico confiable.\n"
+        "- Mantener diversidad editorial y no asumir temas ganadores."
+    )
+
+    if data_dir is None:
+        return predeterminado
+
+    ruta_perfil = (
+        Path(data_dir)
+        / "analytics"
+        / "strategy_profile.json"
+    )
+
+    if not ruta_perfil.is_file():
+        return predeterminado
+
+    try:
+        perfil = json.loads(
+            ruta_perfil.read_text(
+                encoding="utf-8-sig"
+            )
+        )
+    except (
+        OSError,
+        json.JSONDecodeError,
+    ):
+        return predeterminado
+
+    if not isinstance(
+        perfil,
+        dict,
+    ):
+        return predeterminado
+
+    contexto = str(
+        perfil.get(
+            "contexto_prompt",
+            "",
+        )
+    ).strip()
+
+    if not contexto:
+        return predeterminado
+
+    return contexto
+
+
 class GeneradorIdeas:
     """Genera ideas estructuradas para videos de YouTube."""
 
@@ -769,6 +822,12 @@ class GeneradorIdeas:
             investigacion_tendencias
         )
 
+        contexto_estrategico = (
+            cargar_contexto_estrategico(
+                data_dir
+            )
+        )
+
         prompt = f"""
 Actua como director editorial y estratega de documentales para YouTube.
 
@@ -789,6 +848,9 @@ VIDEOS O GUIONES YA SELECCIONADOS:
 
 INVESTIGACION DE DEMANDA RECIENTE:
 {contexto_tendencias}
+
+APRENDIZAJE DEL RENDIMIENTO REAL:
+{contexto_estrategico}
 
 OBJETIVO EDITORIAL:
 
