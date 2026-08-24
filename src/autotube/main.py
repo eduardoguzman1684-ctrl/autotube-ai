@@ -334,6 +334,73 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Abre el panel HTML en el navegador.",
     )
 
+
+    guardian_parser = subcomandos.add_parser(
+        "guardian-run",
+        help=(
+            "Ejecuta el pipeline autonomo con preflight, "
+            "bloqueo y reanudacion segura."
+        ),
+    )
+
+    guardian_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Muestra el plan sin ejecutar el pipeline.",
+    )
+
+    guardian_parser.add_argument(
+        "--sin-publicar",
+        action="store_true",
+        help="Produce contenido sin publicar en YouTube.",
+    )
+
+    guardian_parser.add_argument(
+        "--sin-control-profundo",
+        action="store_true",
+        help="Omite el analisis multimedia profundo.",
+    )
+
+    scheduler_parser = subcomandos.add_parser(
+        "scheduler",
+        help=(
+            "Administra la tarea automatica del "
+            "Programador de Windows."
+        ),
+    )
+
+    scheduler_parser.add_argument(
+        "--accion",
+        choices=(
+            "estado",
+            "instalar",
+            "eliminar",
+        ),
+        default="estado",
+        help="Operacion que se realizara sobre la tarea.",
+    )
+
+    scheduler_parser.add_argument(
+        "--hora",
+        default="08:00",
+        help="Hora de inicio en formato HH:MM.",
+    )
+
+    scheduler_parser.add_argument(
+        "--dias",
+        default="lunes,miercoles,viernes",
+        help="Dias semanales separados por comas.",
+    )
+
+    scheduler_parser.add_argument(
+        "--confirmar",
+        action="store_true",
+        help=(
+            "Confirma la instalacion o eliminacion real. "
+            "Sin esta opcion solo se simula."
+        ),
+    )
+
     encoder_check_parser = subcomandos.add_parser(
         "encoder-check",
         help=(
@@ -1687,6 +1754,187 @@ def generar_dashboard(
     )
 
 
+
+def ejecutar_guardian_automatico(
+    argumentos: argparse.Namespace,
+) -> None:
+    """Ejecuta el pipeline mediante el guardian seguro."""
+    from autotube.operations.guardian import (
+        GuardianPipeline,
+    )
+
+    project_root = Path(__file__).resolve().parents[2]
+
+    guardian = GuardianPipeline(
+        project_root=project_root,
+    )
+
+    resultado = guardian.ejecutar(
+        dry_run=argumentos.dry_run,
+        publicar=not argumentos.sin_publicar,
+        control_profundo=(
+            not argumentos.sin_control_profundo
+        ),
+    )
+
+    guardian.imprimir(
+        resultado
+    )
+
+    estado = resultado[
+        "informe"
+    ]["estado"]
+
+    if (
+        not argumentos.dry_run
+        and estado != "completado"
+    ):
+        raise RuntimeError(
+            "El guardian termino con estado: "
+            f"{estado}"
+        )
+
+
+def gestionar_programador_windows(
+    argumentos: argparse.Namespace,
+) -> None:
+    """Consulta, instala o elimina la tarea automatica."""
+    from autotube.operations.windows_scheduler import (
+        ProgramadorWindows,
+    )
+
+    project_root = Path(__file__).resolve().parents[2]
+
+    programador = ProgramadorWindows(
+        project_root=project_root,
+    )
+
+    if argumentos.accion == "instalar":
+        resultado = programador.instalar(
+            hora=argumentos.hora,
+            dias=argumentos.dias,
+            confirmar=argumentos.confirmar,
+        )
+
+        programador.imprimir_instalacion(
+            resultado
+        )
+
+        if not argumentos.confirmar:
+            print(
+                "SIMULACION: agrega --confirmar "
+                "para instalar la tarea."
+            )
+            return
+
+        if not resultado["instalado"]:
+            raise RuntimeError(
+                "Windows no pudo instalar la tarea: "
+                + str(
+                    resultado.get(
+                        "error",
+                        "",
+                    )
+                )
+            )
+
+        return
+
+    if argumentos.accion == "eliminar":
+        resultado = programador.eliminar(
+            confirmar=argumentos.confirmar,
+        )
+
+        print()
+        print("PROGRAMADOR AUTOMATICO AUTOTUBE AI")
+        print("=" * 72)
+        print("Accion: ELIMINAR")
+        print(
+            "Modo:",
+            (
+                "ELIMINACION REAL"
+                if argumentos.confirmar
+                else "SIMULACION"
+            ),
+        )
+        print(
+            "Comando:",
+            " ".join(
+                resultado["comando"]
+            ),
+        )
+
+        if argumentos.confirmar:
+            print(
+                "Resultado:",
+                (
+                    "ELIMINADA"
+                    if resultado["eliminada"]
+                    else "ERROR"
+                ),
+            )
+
+        if resultado["salida"]:
+            print(
+                resultado["salida"]
+            )
+
+        if resultado["error"]:
+            print(
+                resultado["error"]
+            )
+
+        print("=" * 72)
+
+        if not argumentos.confirmar:
+            print(
+                "SIMULACION: agrega --confirmar "
+                "para eliminar la tarea."
+            )
+            return
+
+        if not resultado["eliminada"]:
+            raise RuntimeError(
+                "Windows no pudo eliminar la tarea."
+            )
+
+        return
+
+    resultado = programador.consultar()
+
+    print()
+    print("PROGRAMADOR AUTOMATICO AUTOTUBE AI")
+    print("=" * 72)
+    print(
+        "Tarea:",
+        resultado["tarea"],
+    )
+    print(
+        "Estado:",
+        (
+            "INSTALADA"
+            if resultado["instalada"]
+            else "NO INSTALADA"
+        ),
+    )
+
+    if resultado["salida"]:
+        print("-" * 72)
+        print(
+            resultado["salida"]
+        )
+
+    if (
+        resultado["error"]
+        and resultado["instalada"]
+    ):
+        print(
+            resultado["error"]
+        )
+
+    print("=" * 72)
+
+
 def comprobar_codificador(
     argumentos: argparse.Namespace,
 ) -> None:
@@ -2625,6 +2873,15 @@ def main() -> None:
 
         if argumentos.comando == "dashboard":
             generar_dashboard(argumentos)
+            return
+
+
+        if argumentos.comando == "guardian-run":
+            ejecutar_guardian_automatico(argumentos)
+            return
+
+        if argumentos.comando == "scheduler":
+            gestionar_programador_windows(argumentos)
             return
 
         if argumentos.comando == "encoder-check":
