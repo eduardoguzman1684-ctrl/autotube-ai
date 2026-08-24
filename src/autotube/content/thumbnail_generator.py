@@ -256,8 +256,14 @@ class GeneradorMiniaturaYouTube:
 
         return lineas[:3]
 
-    def generar(self, forzar: bool = False) -> tuple[Path, bool]:
-        """Genera una miniatura cinematografica y legible."""
+    def generar(
+        self,
+        forzar: bool = False,
+        titulo_override: str | None = None,
+        gancho_override: str | None = None,
+        nombre_salida: str | None = None,
+    ) -> tuple[Path, bool]:
+        """Genera la miniatura principal o una variante experimental."""
         metadata = self._metadata()
         video = self._video()
 
@@ -272,10 +278,16 @@ class GeneradorMiniaturaYouTube:
             exist_ok=True,
         )
 
-        salida = (
-            output_dir
-            / "miniatura_youtube_autotube.jpg"
+        nombre_archivo = (
+            nombre_salida
+            or "miniatura_youtube_autotube.jpg"
         )
+        nombre_archivo = Path(nombre_archivo).name
+
+        if not nombre_archivo.lower().endswith(".jpg"):
+            nombre_archivo += ".jpg"
+
+        salida = output_dir / nombre_archivo
 
         entradas = [
             (
@@ -468,17 +480,27 @@ class GeneradorMiniaturaYouTube:
             ),
         )
 
-        titulo_completo = " ".join(
-            str(
-                metadata.get(
-                    "title",
-                    "El futuro de la IA",
-                )
-            ).split()
+        titulo_fuente = (
+            titulo_override
+            if titulo_override is not None
+            else metadata.get(
+                "title",
+                "El futuro de la IA",
+            )
         )
 
-        gancho = self._texto_corto(
-            titulo_completo
+        titulo_completo = " ".join(
+            str(titulo_fuente).split()
+        )
+
+        gancho = (
+            " ".join(
+                str(gancho_override).split()
+            ).upper()
+            if gancho_override
+            else self._texto_corto(
+                titulo_completo
+            )
         )
 
         tamano_gancho = 112

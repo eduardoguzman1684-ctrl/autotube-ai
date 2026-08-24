@@ -403,6 +403,92 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Informe JSON; usa el mas reciente por defecto.",
     )
 
+    experiment_parser = subcomandos.add_parser(
+        "experiment",
+        help=(
+            "Genera variantes A/B editoriales "
+            "sin modificar publicaciones."
+        ),
+    )
+
+    experiment_parser.add_argument(
+        "--variable",
+        choices=[
+            "titulo",
+            "miniatura",
+            "gancho",
+            "duracion",
+        ],
+        default="titulo",
+        help="Unica variable que cambiara el experimento.",
+    )
+
+    experiment_parser.add_argument(
+        "--cantidad",
+        type=int,
+        default=3,
+        help="Cantidad de variantes, incluyendo el control A.",
+    )
+
+    experiment_parser.add_argument(
+        "--sin-miniaturas",
+        action="store_true",
+        help="No renderiza imagenes en experimentos de miniatura.",
+    )
+
+    experiment_result_parser = subcomandos.add_parser(
+        "experiment-result",
+        help="Registra metricas de una variante experimental.",
+    )
+
+    experiment_result_parser.add_argument(
+        "--codigo",
+        required=True,
+        choices=["A", "B", "C", "D", "E"],
+        help="Codigo de la variante evaluada.",
+    )
+
+    experiment_result_parser.add_argument(
+        "--vistas",
+        required=True,
+        type=int,
+        help="Visualizaciones acumuladas de la variante.",
+    )
+
+    experiment_result_parser.add_argument(
+        "--ctr",
+        type=float,
+        default=None,
+        help="CTR de impresiones expresado como porcentaje.",
+    )
+
+    experiment_result_parser.add_argument(
+        "--retencion",
+        type=float,
+        default=None,
+        help="Porcentaje medio de visualizacion.",
+    )
+
+    experiment_result_parser.add_argument(
+        "--duracion-media",
+        type=float,
+        default=None,
+        help="Duracion media de visualizacion en segundos.",
+    )
+
+    experiment_result_parser.add_argument(
+        "--minutos-vistos",
+        type=float,
+        default=None,
+        help="Minutos de reproduccion acumulados.",
+    )
+
+    experiment_result_parser.add_argument(
+        "--experimento",
+        default=None,
+        help="Archivo JSON; usa el experimento actual por defecto.",
+    )
+
     shorts_parser = subcomandos.add_parser(
         "shorts",
         help="Genera Shorts verticales desde el documental mas reciente.",
@@ -1323,6 +1409,197 @@ def generar_insights_analitica(
     )
 
 
+def generar_experimento(
+    argumentos: argparse.Namespace,
+) -> None:
+    """Genera un experimento editorial controlado."""
+    from autotube.content.experiment_manager import (
+        GestorExperimentosYouTube,
+    )
+
+    project_root = Path(__file__).resolve().parents[2]
+
+    gestor = GestorExperimentosYouTube(
+        project_root=project_root,
+    )
+
+    resultado = gestor.generar(
+        variable=argumentos.variable,
+        cantidad=argumentos.cantidad,
+        renderizar_miniaturas=(
+            not argumentos.sin_miniaturas
+        ),
+    )
+
+    experimento = resultado["experimento"]
+
+    print()
+    print("EXPERIMENTO EDITORIAL DE YOUTUBE")
+    print("=" * 72)
+    print(
+        "ID:",
+        experimento["experimento_id"],
+    )
+    print(
+        "Variable unica:",
+        experimento["variable"],
+    )
+    print(
+        "Metrica principal:",
+        experimento["metrica"]["primaria"],
+    )
+    print(
+        "Minimo:",
+        experimento["reglas"]["vistas_minimas_por_variante"],
+        "vistas por variante",
+    )
+    print("-" * 72)
+
+    for variante in experimento["variantes"]:
+        print()
+        print(
+            f"VARIANTE {variante['codigo']}"
+            + (
+                " - CONTROL"
+                if variante["control"]
+                else ""
+            )
+        )
+        print(
+            "Titulo:",
+            variante["titulo"],
+        )
+        print(
+            "Texto miniatura:",
+            variante["texto_miniatura"],
+        )
+        print(
+            "Gancho:",
+            variante["gancho_inicial"],
+        )
+        print(
+            "Duracion objetivo:",
+            variante["duracion_objetivo_minutos"],
+            "minutos",
+        )
+        print(
+            "Hipotesis:",
+            variante["hipotesis"],
+        )
+
+        if variante.get("miniatura"):
+            print(
+                "Miniatura:",
+                variante["miniatura"],
+            )
+
+    print()
+    print("=" * 72)
+    print(
+        "ESTADO: PLANIFICADO; NO SE MODIFICO YOUTUBE"
+    )
+    print(
+        "Experimento:",
+        resultado["archivo"],
+    )
+    print("=" * 72)
+
+
+def registrar_resultado_experimento(
+    argumentos: argparse.Namespace,
+) -> None:
+    """Registra metricas y evalua un experimento."""
+    from autotube.content.experiment_manager import (
+        GestorExperimentosYouTube,
+    )
+
+    project_root = Path(__file__).resolve().parents[2]
+
+    gestor = GestorExperimentosYouTube(
+        project_root=project_root,
+    )
+
+    resultado = gestor.registrar_resultado(
+        codigo=argumentos.codigo,
+        vistas=argumentos.vistas,
+        ctr=argumentos.ctr,
+        retencion=argumentos.retencion,
+        duracion_media=argumentos.duracion_media,
+        minutos_vistos=argumentos.minutos_vistos,
+        archivo=argumentos.experimento,
+    )
+
+    evaluacion = resultado["evaluacion"]
+
+    print()
+    print("RESULTADO DE EXPERIMENTO REGISTRADO")
+    print("=" * 72)
+    print(
+        "Variante:",
+        argumentos.codigo,
+    )
+    print(
+        "Vistas:",
+        argumentos.vistas,
+    )
+    print(
+        "Estado:",
+        evaluacion["estado"].upper(),
+    )
+    print(
+        "Metrica:",
+        evaluacion["metrica"],
+    )
+
+    ganador = evaluacion.get(
+        "ganador_provisional",
+        "",
+    )
+
+    if ganador:
+        print(
+            "Ganador provisional:",
+            ganador,
+        )
+        print(
+            "Diferencia:",
+            evaluacion.get(
+                "diferencia",
+                0,
+            ),
+        )
+    else:
+        print(
+            "Ganador provisional: ninguno"
+        )
+
+    faltantes = evaluacion.get(
+        "faltantes",
+        [],
+    )
+
+    for elemento in faltantes:
+        print(
+            f"- Variante {elemento['codigo']}: "
+            + ", ".join(
+                elemento["razones"]
+            )
+        )
+
+    print(
+        "Nota:",
+        evaluacion.get(
+            "nota",
+            "",
+        ),
+    )
+    print(
+        "Experimento:",
+        resultado["archivo"],
+    )
+    print("=" * 72)
+
+
 def generar_analitica(argumentos: argparse.Namespace) -> None:
     """Ejecuta el informe local de YouTube Analytics."""
     import subprocess
@@ -2107,6 +2384,14 @@ def main() -> None:
 
         if argumentos.comando == "analytics-insights":
             generar_insights_analitica(argumentos)
+            return
+
+        if argumentos.comando == "experiment":
+            generar_experimento(argumentos)
+            return
+
+        if argumentos.comando == "experiment-result":
+            registrar_resultado_experimento(argumentos)
             return
 
         if argumentos.comando == "shorts":
