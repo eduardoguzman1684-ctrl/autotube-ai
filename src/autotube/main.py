@@ -320,6 +320,20 @@ def crear_parser() -> argparse.ArgumentParser:
     )
 
 
+    dashboard_parser = subcomandos.add_parser(
+        "dashboard",
+        help=(
+            "Genera el centro de control operativo "
+            "de AutoTube AI."
+        ),
+    )
+
+    dashboard_parser.add_argument(
+        "--abrir",
+        action="store_true",
+        help="Abre el panel HTML en el navegador.",
+    )
+
     encoder_check_parser = subcomandos.add_parser(
         "encoder-check",
         help=(
@@ -1656,6 +1670,23 @@ def generar_analitica(argumentos: argparse.Namespace) -> None:
     )
 
 
+def generar_dashboard(
+    argumentos: argparse.Namespace,
+) -> None:
+    """Genera el centro de control operativo local."""
+    from autotube.operations.dashboard import (
+        CentroControlAutoTube,
+    )
+
+    project_root = Path(__file__).resolve().parents[2]
+
+    CentroControlAutoTube(
+        project_root=project_root,
+    ).generar(
+        abrir=argumentos.abrir,
+    )
+
+
 def comprobar_codificador(
     argumentos: argparse.Namespace,
 ) -> None:
@@ -1885,6 +1916,8 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
     project_root = Path(__file__).resolve().parents[2]
 
     import json
+    import time
+    from datetime import datetime
 
     ruta_estado = (
         project_root
@@ -1894,7 +1927,18 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
 
     estado: dict[str, object] = {
         "completado": False,
+        "iniciado_en": (
+            datetime.now()
+            .astimezone()
+            .isoformat(timespec="seconds")
+        ),
+        "actualizado_en": "",
+        "finalizado_en": "",
+        "paso_actual": "",
+        "total_pasos": 0,
         "pasos_completados": [],
+        "duraciones_pasos": {},
+        "ejecuciones_pasos": [],
         "ultimo_error": "",
         "parametros": {
             "nicho": argumentos.nicho,
@@ -1928,7 +1972,46 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
                 "Se iniciar? un pipeline nuevo."
             )
 
+    estado.setdefault(
+        "iniciado_en",
+        (
+            datetime.now()
+            .astimezone()
+            .isoformat(timespec="seconds")
+        ),
+    )
+    estado.setdefault(
+        "actualizado_en",
+        "",
+    )
+    estado.setdefault(
+        "finalizado_en",
+        "",
+    )
+    estado.setdefault(
+        "paso_actual",
+        "",
+    )
+    estado.setdefault(
+        "total_pasos",
+        0,
+    )
+    estado.setdefault(
+        "duraciones_pasos",
+        {},
+    )
+    estado.setdefault(
+        "ejecuciones_pasos",
+        [],
+    )
+
     def guardar_estado() -> None:
+        estado["actualizado_en"] = (
+            datetime.now()
+            .astimezone()
+            .isoformat(timespec="seconds")
+        )
+
         ruta_estado.parent.mkdir(
             parents=True,
             exist_ok=True,
@@ -1961,6 +2044,58 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
             "from autotube.main import main; main()",
         ]
 
+    def registrar_ejecucion_paso(
+        nombre: str,
+        inicio_monotono: float,
+        iniciado_en: str,
+        resultado: str,
+        error: str = "",
+    ) -> None:
+        duracion = round(
+            time.perf_counter()
+            - inicio_monotono,
+            3,
+        )
+
+        duraciones = estado.setdefault(
+            "duraciones_pasos",
+            {},
+        )
+
+        if isinstance(
+            duraciones,
+            dict,
+        ):
+            duraciones[nombre] = duracion
+
+        ejecuciones = estado.setdefault(
+            "ejecuciones_pasos",
+            [],
+        )
+
+        if isinstance(
+            ejecuciones,
+            list,
+        ):
+            ejecuciones.append(
+                {
+                    "paso": nombre,
+                    "iniciado_en": iniciado_en,
+                    "finalizado_en": (
+                        datetime.now()
+                        .astimezone()
+                        .isoformat(
+                            timespec="seconds"
+                        )
+                    ),
+                    "duracion_segundos": duracion,
+                    "resultado": resultado,
+                    "error": error,
+                }
+            )
+
+        estado["paso_actual"] = ""
+
     def ejecutar_paso(
         numero: int,
         total: int,
@@ -1979,6 +2114,16 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
             " ".join(str(parte) for parte in comando),
         )
 
+        inicio_paso = time.perf_counter()
+        inicio_paso_fecha = (
+            datetime.now()
+            .astimezone()
+            .isoformat(timespec="seconds")
+        )
+
+        estado["paso_actual"] = nombre
+        guardar_estado()
+
         try:
             subprocess.run(
                 comando,
@@ -1989,6 +2134,14 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
         except Exception as error:
             estado["ultimo_error"] = (
                 f"{nombre}: {error}"
+            )
+
+            registrar_ejecucion_paso(
+                nombre=nombre,
+                inicio_monotono=inicio_paso,
+                iniciado_en=inicio_paso_fecha,
+                resultado="error",
+                error=str(error),
             )
 
             if nombre == "Validaci?n del guion corregido":
@@ -2008,6 +2161,13 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
 
             guardar_estado()
             raise
+
+        registrar_ejecucion_paso(
+            nombre=nombre,
+            inicio_monotono=inicio_paso,
+            iniciado_en=inicio_paso_fecha,
+            resultado="completado",
+        )
 
         completados = estado.setdefault(
             "pasos_completados",
@@ -2115,6 +2275,8 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
     )
 
     total = len(pasos)
+    estado["total_pasos"] = total
+    guardar_estado()
 
     print()
     print("#" * 72)
@@ -2325,7 +2487,13 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
         sincronizar_cola_pipeline()
 
     estado["completado"] = True
+    estado["paso_actual"] = ""
     estado["ultimo_error"] = ""
+    estado["finalizado_en"] = (
+        datetime.now()
+        .astimezone()
+        .isoformat(timespec="seconds")
+    )
     guardar_estado()
 
     print()
@@ -2454,6 +2622,10 @@ def main() -> None:
             renderizar_video(argumentos)
             return
 
+
+        if argumentos.comando == "dashboard":
+            generar_dashboard(argumentos)
+            return
 
         if argumentos.comando == "encoder-check":
             comprobar_codificador(argumentos)
