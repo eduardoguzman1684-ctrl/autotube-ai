@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import ssl
 import sys
@@ -302,12 +303,117 @@ def change_visibility(
     ).execute()
 
 
+def calcular_sha256(
+    archivo: Path,
+) -> str:
+    """Calcula una huella estable para evitar subidas duplicadas."""
+    resumen = hashlib.sha256()
+
+    with archivo.open("rb") as entrada:
+        while True:
+            bloque = entrada.read(
+                4 * 1024 * 1024
+            )
+
+            if not bloque:
+                break
+
+            resumen.update(bloque)
+
+    return resumen.hexdigest()
+
+
+def buscar_publicacion_existente(
+    video: Path,
+    sha256_video: str,
+) -> tuple[Path | None, dict]:
+    """Busca un manifiesto que confirme la subida del mismo video."""
+    manifiestos = sorted(
+        (
+            ruta
+            for ruta in (
+                ROOT
+                / "output"
+                / "youtube"
+            ).glob("publish_*.json")
+            if ruta.is_file()
+        ),
+        key=lambda ruta: ruta.stat().st_mtime,
+        reverse=True,
+    )
+
+    video_resuelto = video.resolve()
+    video_mtime = video.stat().st_mtime
+
+    for manifiesto in manifiestos:
+        try:
+            datos = json.loads(
+                manifiesto.read_text(
+                    encoding="utf-8-sig"
+                )
+            )
+        except (
+            OSError,
+            json.JSONDecodeError,
+        ):
+            continue
+
+        if not isinstance(datos, dict):
+            continue
+
+        video_id = str(
+            datos.get(
+                "video_id",
+                "",
+            )
+        ).strip()
+
+        if not video_id:
+            continue
+
+        huella_guardada = str(
+            datos.get(
+                "sha256",
+                "",
+            )
+        ).strip()
+
+        misma_huella = (
+            bool(huella_guardada)
+            and huella_guardada == sha256_video
+        )
+
+        misma_ruta = False
+        ruta_guardada = datos.get(
+            "video"
+        )
+
+        if ruta_guardada:
+            try:
+                misma_ruta = (
+                    Path(
+                        str(ruta_guardada)
+                    ).resolve()
+                    == video_resuelto
+                    and manifiesto.stat().st_mtime
+                    >= video_mtime
+                )
+            except OSError:
+                misma_ruta = False
+
+        if misma_huella or misma_ruta:
+            return manifiesto, datos
+
+    return None, {}
+
+
 def save_manifest(
     video_id: str,
     video: Path,
     thumbnail: Path,
     srt: Path,
     metadata: dict,
+    sha256_video: str,
 ):
     output = ROOT / "output" / "youtube"
     output.mkdir(parents=True, exist_ok=True)
@@ -323,6 +429,8 @@ def save_manifest(
         "thumbnail": str(thumbnail),
         "subtitles": str(srt),
         "title": metadata["title"],
+        "sha256": sha256_video,
+        "size_bytes": video.stat().st_size,
         "privacy": metadata.get(
             "privacy",
             "private",
@@ -369,6 +477,17 @@ def main() -> int:
         "output/thumbnails/*.jpg"
     )
 
+    sha256_video = calcular_sha256(
+        video
+    )
+
+    manifiesto_existente, publicacion_existente = (
+        buscar_publicacion_existente(
+            video=video,
+            sha256_video=sha256_video,
+        )
+    )
+
     print()
     print("NEXON IA - PUBLICACIÓN")
     print("=" * 50)
@@ -381,6 +500,24 @@ def main() -> int:
         metadata.get("privacy", "private"),
     )
     print("=" * 50)
+
+    if publicacion_existente:
+        video_id_existente = str(
+            publicacion_existente["video_id"]
+        )
+
+        print()
+        print(
+            "VIDEO YA PUBLICADO: subida omitida."
+        )
+        print(
+            f"https://youtu.be/{video_id_existente}"
+        )
+        print(
+            "Manifest:",
+            manifiesto_existente,
+        )
+        return 0
 
     if args.dry_run:
         print()
@@ -436,6 +573,7 @@ def main() -> int:
         thumbnail,
         srt,
         metadata,
+        sha256_video,
     )
 
     print()

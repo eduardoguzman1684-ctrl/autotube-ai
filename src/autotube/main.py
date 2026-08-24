@@ -339,6 +339,27 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Cantidad maxima de videos incluidos.",
     )
 
+    subcomandos.add_parser(
+        "publish-status",
+        help="Muestra el estado actual de la cola de YouTube.",
+    )
+
+    subcomandos.add_parser(
+        "publish-queue",
+        help="Sincroniza archivos y publicaciones con la cola.",
+    )
+
+    publish_resume_parser = subcomandos.add_parser(
+        "publish-resume",
+        help="Reanuda las publicaciones pendientes de YouTube.",
+    )
+
+    publish_resume_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simula la reanudacion sin subir videos.",
+    )
+
     shorts_parser = subcomandos.add_parser(
         "shorts",
         help="Genera Shorts verticales desde el documental mas reciente.",
@@ -1236,6 +1257,52 @@ def generar_analitica(argumentos: argparse.Namespace) -> None:
     )
 
 
+def gestionar_cola_publicacion(
+    argumentos: argparse.Namespace,
+) -> None:
+    """Consulta, sincroniza o reanuda la cola de YouTube."""
+    import subprocess
+    import sys
+
+    project_root = Path(__file__).resolve().parents[2]
+    herramienta = (
+        project_root
+        / "tools"
+        / "youtube_publish_queue.py"
+    )
+
+    if not herramienta.is_file():
+        raise FileNotFoundError(
+            "No existe el gestor de la cola: "
+            f"{herramienta}"
+        )
+
+    acciones = {
+        "publish-status": "status",
+        "publish-queue": "sync",
+        "publish-resume": "resume",
+    }
+
+    accion = acciones[argumentos.comando]
+    comando = [
+        sys.executable,
+        str(herramienta),
+        accion,
+    ]
+
+    if (
+        accion == "resume"
+        and getattr(argumentos, "dry_run", False)
+    ):
+        comando.append("--dry-run")
+
+    subprocess.run(
+        comando,
+        cwd=project_root,
+        check=True,
+    )
+
+
 def generar_shorts(argumentos: argparse.Namespace) -> None:
     """Genera Shorts verticales desde el documental mas reciente."""
     project_root = Path(__file__).resolve().parents[2]
@@ -1606,6 +1673,32 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
         "GENERADA" if miniatura_generada else "REUTILIZADA",
     )
 
+    gestor_cola = (
+        project_root
+        / "tools"
+        / "youtube_publish_queue.py"
+    )
+
+    if not gestor_cola.is_file():
+        raise FileNotFoundError(
+            "No existe el gestor de publicaciones: "
+            f"{gestor_cola}"
+        )
+
+    def sincronizar_cola_pipeline() -> None:
+        subprocess.run(
+            [
+                sys.executable,
+                str(gestor_cola),
+                "sync",
+            ],
+            cwd=project_root,
+            check=True,
+        )
+
+    print("Sincronizando cola segura de publicacion...")
+    sincronizar_cola_pipeline()
+
     if argumentos.sin_publicar:
         print("5/6 YouTube omitido por --sin-publicar.")
     else:
@@ -1619,6 +1712,7 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
             cwd=project_root,
             check=True,
         )
+        sincronizar_cola_pipeline()
 
     if argumentos.sin_publicar:
         print(
@@ -1656,6 +1750,7 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
             cwd=project_root,
             check=True,
         )
+        sincronizar_cola_pipeline()
 
     estado["completado"] = True
     estado["ultimo_error"] = ""
@@ -1787,6 +1882,14 @@ def main() -> None:
             renderizar_video(argumentos)
             return
 
+
+        if argumentos.comando in {
+            "publish-status",
+            "publish-queue",
+            "publish-resume",
+        }:
+            gestionar_cola_publicacion(argumentos)
+            return
 
         if argumentos.comando == "analytics":
             generar_analitica(argumentos)
