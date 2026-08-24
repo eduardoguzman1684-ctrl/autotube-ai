@@ -80,6 +80,57 @@ def es_limite_subida(error: Exception) -> bool:
     )
 
 
+def es_error_conexion(
+    error: Exception,
+) -> bool:
+    """Detecta fallos temporales de DNS, SSL o transporte."""
+    mensajes: list[str] = []
+    actual: BaseException | None = error
+    visitados: set[int] = set()
+
+    while (
+        actual is not None
+        and id(actual) not in visitados
+    ):
+        visitados.add(
+            id(actual)
+        )
+        mensajes.append(
+            str(actual)
+        )
+        actual = (
+            actual.__cause__
+            or actual.__context__
+        )
+
+    mensaje = " ".join(
+        mensajes
+    ).lower()
+
+    indicadores = (
+        "getaddrinfo failed",
+        "failed to resolve",
+        "name resolution",
+        "nameresolutionerror",
+        "temporary failure in name resolution",
+        "max retries exceeded",
+        "connectionerror",
+        "transporterror",
+        "connection reset",
+        "connection aborted",
+        "remote disconnected",
+        "server disconnected",
+        "eof occurred in violation of protocol",
+        "timed out",
+        "timeout",
+    )
+
+    return any(
+        indicador in mensaje
+        for indicador in indicadores
+    )
+
+
 def ordenes_pendientes(
     shorts: list[dict[str, Any]],
     publicaciones: dict[int, dict[str, Any]],
@@ -318,11 +369,6 @@ def main() -> int:
             )
             continue
 
-        if youtube is None:
-            youtube = (
-                publicador.youtube_client()
-            )
-
         metadata = {
             "title": titulo,
             "description": descripcion,
@@ -342,6 +388,11 @@ def main() -> int:
         )
 
         try:
+            if youtube is None:
+                youtube = (
+                    publicador.youtube_client()
+                )
+
             video_id = (
                 publicador.upload_video(
                     youtube,
@@ -351,6 +402,64 @@ def main() -> int:
             )
 
         except Exception as error:
+            if es_error_conexion(
+                error
+            ):
+                pendientes = ordenes_pendientes(
+                    shorts,
+                    publicaciones,
+                )
+
+                estado["estado"] = (
+                    "pendiente_conexion_youtube"
+                )
+                estado["motivo"] = (
+                    "conexion_temporal_no_disponible"
+                )
+                estado["detalle_error"] = str(
+                    error
+                )[-1200:]
+                estado["conexion_detectada_en"] = (
+                    datetime.now()
+                    .astimezone()
+                    .isoformat(timespec="seconds")
+                )
+                estado["siguiente_orden"] = orden
+                estado["pendientes"] = pendientes
+                estado["publicaciones"] = [
+                    publicaciones[clave]
+                    for clave in sorted(
+                        publicaciones
+                    )
+                ]
+
+                guardar_estado(
+                    estado_ruta,
+                    estado,
+                )
+
+                print()
+                print("=" * 56)
+                print(
+                    "CONEXION CON YOUTUBE NO DISPONIBLE"
+                )
+                print(
+                    "Los Shorts pendientes quedaron "
+                    "guardados de forma segura."
+                )
+                print(
+                    "Cuando regrese la conexion ejecuta:"
+                )
+                print(
+                    "autotube publish-resume"
+                )
+                print(
+                    f"Estado: {estado_ruta}"
+                )
+                print("=" * 56)
+
+                return 0
+
             if not es_limite_subida(
                 error
             ):

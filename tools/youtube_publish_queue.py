@@ -348,6 +348,9 @@ def agregar_o_actualizar(
                 f"{video_id_anterior}"
             )
 
+    if existente.get("estado") != "error":
+        existente["ultimo_error"] = ""
+
     existente["actualizado_en"] = (
         ahora()
     )
@@ -557,6 +560,13 @@ def sincronizar(
                 ):
                     estado = (
                         "aplazado_limite"
+                    )
+                elif (
+                    estado_lote
+                    == "pendiente_conexion_youtube"
+                ):
+                    estado = (
+                        "aplazado_conexion"
                     )
                 else:
                     estado = "pendiente"
@@ -807,6 +817,7 @@ def reanudar(
             in {
                 "pendiente",
                 "aplazado_limite",
+                "aplazado_conexion",
                 "error",
             }
         )
@@ -902,6 +913,7 @@ def reanudar(
             in {
                 "pendiente",
                 "aplazado_limite",
+                "aplazado_conexion",
                 "error",
             }
         )
