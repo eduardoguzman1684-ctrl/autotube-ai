@@ -13,6 +13,14 @@ from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
 
+from autotube.video.hardware_encoder import (
+    ConfiguracionCodificador,
+    describir_codificador,
+    limpiar_salida_parcial,
+    marcar_qsv_fallido,
+    seleccionar_codificador,
+)
+
 
 @dataclass(frozen=True)
 class Subtitulo:
@@ -103,6 +111,7 @@ class GeneradorShorts:
 
     def __init__(self, project_root: Path) -> None:
         self.project_root = Path(project_root).resolve()
+        self._codificador_anunciado = False
 
     def _latest(self, pattern: str) -> Path:
         archivos = [
@@ -813,54 +822,117 @@ class GeneradorShorts:
             "Alignment=2,MarginL=15,MarginR=15,MarginV=72'[v]"
         )
 
-        comando = [
-            ffmpeg,
-            "-y",
-            "-ss",
-            f"{fragmento.inicio:.3f}",
-            "-t",
-            f"{fragmento.duracion:.3f}",
-            "-i",
-            str(video),
-            "-loop",
-            "1",
-            "-i",
-            str(overlay),
-            "-filter_complex",
-            filtro,
-            "-map",
-            "[v]",
-            "-map",
-            "0:a:0?",
-            "-af",
-            "loudnorm=I=-14:TP=-1.5:LRA=7",
-            "-ar",
-            "48000",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "fast",
-            "-crf",
-            "20",
-            "-pix_fmt",
-            "yuv420p",
-            "-r",
-            "30",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "160k",
-            "-movflags",
-            "+faststart",
-            "-shortest",
-            str(salida),
-        ]
-
-        subprocess.run(
-            comando,
-            cwd=self.project_root,
-            check=True,
+        configuracion = seleccionar_codificador(
+            crf_cpu=20,
+            preset_cpu="fast",
         )
+
+        if not self._codificador_anunciado:
+            print(
+                "Codificacion de Shorts:",
+                describir_codificador(
+                    configuracion
+                ),
+            )
+            self._codificador_anunciado = True
+
+        def construir_comando(
+            seleccion: ConfiguracionCodificador,
+        ) -> list[str]:
+            return [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "warning",
+                "-stats_period",
+                "5",
+                "-y",
+                "-ss",
+                f"{fragmento.inicio:.3f}",
+                "-t",
+                f"{fragmento.duracion:.3f}",
+                "-i",
+                str(video),
+                "-loop",
+                "1",
+                "-i",
+                str(overlay),
+                "-filter_complex",
+                filtro,
+                "-map",
+                "[v]",
+                "-map",
+                "0:a:0?",
+                "-af",
+                "loudnorm=I=-14:TP=-1.5:LRA=7",
+                "-ar",
+                "48000",
+                *seleccion.opciones,
+                "-r",
+                "30",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "160k",
+                "-movflags",
+                "+faststart",
+                "-shortest",
+                str(salida),
+            ]
+
+        comando = construir_comando(
+            configuracion
+        )
+
+        try:
+            subprocess.run(
+                comando,
+                cwd=self.project_root,
+                check=True,
+                timeout=1800,
+            )
+
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+        ) as error:
+            if not configuracion.hardware:
+                raise
+
+            print(
+                "AVISO: Quick Sync fallo al crear "
+                "un Short."
+            )
+            print(
+                "Reintentando automaticamente "
+                "con libx264 por CPU..."
+            )
+
+            marcar_qsv_fallido(
+                error
+            )
+
+            limpiar_salida_parcial(
+                salida
+            )
+
+            configuracion = (
+                seleccionar_codificador(
+                    crf_cpu=20,
+                    preset_cpu="fast",
+                )
+            )
+
+            comando = construir_comando(
+                configuracion
+            )
+
+            subprocess.run(
+                comando,
+                cwd=self.project_root,
+                check=True,
+                timeout=1800,
+            )
 
         if not salida.is_file() or salida.stat().st_size == 0:
             raise RuntimeError(f"No se genero correctamente: {salida}")

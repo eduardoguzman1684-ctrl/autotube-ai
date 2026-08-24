@@ -7,6 +7,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from autotube.video.hardware_encoder import (
+    ConfiguracionCodificador,
+    describir_codificador,
+    limpiar_salida_parcial,
+    marcar_qsv_fallido,
+    seleccionar_codificador,
+)
+
 
 EXTENSIONES_VIDEO = {
     ".mp4",
@@ -586,38 +594,91 @@ class CompositorVideo:
                 f"Formato visual no compatible: {origen}"
             )
 
-        self.ejecutar_ffmpeg(
-            [
+        configuracion = seleccionar_codificador(
+            crf_cpu=crf,
+            preset_cpu=preset,
+            preferir_qsv=False,
+        )
+
+        def argumentos_codificacion(
+            seleccion: ConfiguracionCodificador,
+        ) -> list[str]:
+            filtro_salida = filtro
+
+            if seleccion.hardware:
+                filtro_salida += ",format=nv12"
+
+            opciones_gop = [
+                "-g",
+                str(fps * 2),
+            ]
+
+            if not seleccion.hardware:
+                opciones_gop.extend(
+                    [
+                        "-keyint_min",
+                        str(fps * 2),
+                        "-sc_threshold",
+                        "0",
+                    ]
+                )
+
+            return [
                 *entrada,
                 "-t",
                 f"{duracion:.3f}",
                 "-an",
                 "-vf",
-                filtro,
+                filtro_salida,
                 "-r",
                 str(fps),
-                "-c:v",
-                "libx264",
-                "-preset",
-                preset,
-                "-crf",
-                str(crf),
-                "-pix_fmt",
-                "yuv420p",
-                "-g",
-                str(fps * 2),
-                "-keyint_min",
-                str(fps * 2),
-                "-sc_threshold",
-                "0",
+                *seleccion.opciones,
+                *opciones_gop,
                 "-video_track_timescale",
                 "90000",
                 "-movflags",
                 "+faststart",
                 str(destino),
-            ],
-            timeout=900,
-        )
+            ]
+
+        try:
+            self.ejecutar_ffmpeg(
+                argumentos_codificacion(
+                    configuracion
+                ),
+                timeout=900,
+            )
+
+        except RuntimeError as error:
+            if not configuracion.hardware:
+                raise
+
+            print(
+                "AVISO: Quick Sync fallo en un clip. "
+                "Reintentando por CPU..."
+            )
+
+            marcar_qsv_fallido(
+                error
+            )
+
+            limpiar_salida_parcial(
+                destino
+            )
+
+            configuracion = (
+                seleccionar_codificador(
+                    crf_cpu=crf,
+                    preset_cpu=preset,
+                )
+            )
+
+            self.ejecutar_ffmpeg(
+                argumentos_codificacion(
+                    configuracion
+                ),
+                timeout=900,
+            )
 
         if (
             not destino.is_file()
@@ -798,6 +859,19 @@ class CompositorVideo:
             crf = 23
             preset = "veryfast"
             nombre_final = "video_final.mp4"
+
+        configuracion_inicial = seleccionar_codificador(
+            crf_cpu=crf,
+            preset_cpu=preset,
+            preferir_qsv=False,
+        )
+
+        print(
+            "Codificacion de clips:",
+            describir_codificador(
+                configuracion_inicial
+            ),
+        )
 
         marca_tiempo = datetime.now().strftime(
             "%Y%m%d_%H%M%S"

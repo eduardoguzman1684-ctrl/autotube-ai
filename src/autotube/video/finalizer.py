@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import math
-import os
 import shutil
 import struct
 import subprocess
 import wave
 from pathlib import Path
+
+from autotube.video.hardware_encoder import (
+    ConfiguracionCodificador,
+    describir_codificador,
+    limpiar_salida_parcial,
+    marcar_qsv_fallido,
+    seleccionar_codificador,
+)
 
 
 class FinalizadorVideo:
@@ -182,77 +189,112 @@ class FinalizadorVideo:
             "amix=inputs=2:duration=first:dropout_transition=2[a]"
         )
 
-        codificador_video = os.getenv(
-            "AUTOTUBE_VIDEO_ENCODER",
-            "libx264",
-        ).strip().lower()
-
-        if codificador_video == "h264_qsv":
-            filtro_subtitulos += ",format=nv12"
-
-            opciones_video = [
-                "-c:v",
-                "h264_qsv",
-                "-preset",
-                "veryfast",
-                "-global_quality",
-                os.getenv(
-                    "AUTOTUBE_QSV_QUALITY",
-                    "20",
-                ),
-            ]
-
-            print(
-                "Aceleracion de video: "
-                "Intel Quick Sync"
-            )
-        else:
-            opciones_video = [
-                "-c:v",
-                "libx264",
-                "-preset",
-                "fast",
-                "-crf",
-                "18",
-            ]
-
-            print(
-                "Codificacion de video: "
-                "libx264 por CPU"
-            )
-        comando = [
-            ffmpeg,
-            "-y",
-            "-i",
-            str(video),
-            "-stream_loop",
-            "-1",
-            "-i",
-            str(musica),
-            "-vf",
-            filtro_subtitulos,
-            "-filter_complex",
-            filtro_audio,
-            "-map",
-            "0:v:0",
-            "-map",
-            "[a]",
-            *opciones_video,
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-movflags",
-            "+faststart",
-            "-shortest",
-            str(salida),
-        ]
-
-        subprocess.run(
-            comando,
-            cwd=self.project_root,
-            check=True,
+        configuracion = seleccionar_codificador(
+            crf_cpu=18,
+            preset_cpu="fast",
         )
+
+        print(
+            "Codificacion de video:",
+            describir_codificador(
+                configuracion
+            ),
+        )
+
+        def construir_comando(
+            seleccion: ConfiguracionCodificador,
+        ) -> list[str]:
+            filtro_video = filtro_subtitulos
+
+            if seleccion.hardware:
+                filtro_video += ",format=nv12"
+
+            return [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "warning",
+                "-stats_period",
+                "5",
+                "-y",
+                "-i",
+                str(video),
+                "-stream_loop",
+                "-1",
+                "-i",
+                str(musica),
+                "-vf",
+                filtro_video,
+                "-filter_complex",
+                filtro_audio,
+                "-map",
+                "0:v:0",
+                "-map",
+                "[a]",
+                *seleccion.opciones,
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
+                "-shortest",
+                str(salida),
+            ]
+
+        comando = construir_comando(
+            configuracion
+        )
+
+        try:
+            subprocess.run(
+                comando,
+                cwd=self.project_root,
+                check=True,
+                timeout=7200,
+            )
+
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+        ) as error:
+            if not configuracion.hardware:
+                raise
+
+            print(
+                "AVISO: Quick Sync fallo durante "
+                "el render final."
+            )
+            print(
+                "Reintentando automaticamente "
+                "con libx264 por CPU..."
+            )
+
+            marcar_qsv_fallido(
+                error
+            )
+
+            limpiar_salida_parcial(
+                salida
+            )
+
+            configuracion = (
+                seleccionar_codificador(
+                    crf_cpu=18,
+                    preset_cpu="fast",
+                )
+            )
+
+            comando = construir_comando(
+                configuracion
+            )
+
+            subprocess.run(
+                comando,
+                cwd=self.project_root,
+                check=True,
+                timeout=7200,
+            )
 
         if not salida.exists() or salida.stat().st_size == 0:
             raise RuntimeError(

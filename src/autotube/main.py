@@ -320,6 +320,20 @@ def crear_parser() -> argparse.ArgumentParser:
     )
 
 
+    encoder_check_parser = subcomandos.add_parser(
+        "encoder-check",
+        help=(
+            "Comprueba Quick Sync y muestra "
+            "el codificador elegido por etapa."
+        ),
+    )
+
+    encoder_check_parser.add_argument(
+        "--reprobar",
+        action="store_true",
+        help="Repite la prueba real de Quick Sync.",
+    )
+
     media_check_parser = subcomandos.add_parser(
         "media-check",
         help=(
@@ -1642,6 +1656,81 @@ def generar_analitica(argumentos: argparse.Namespace) -> None:
     )
 
 
+def comprobar_codificador(
+    argumentos: argparse.Namespace,
+) -> None:
+    """Comprueba y describe la seleccion de codificador."""
+    from autotube.video.hardware_encoder import (
+        describir_codificador,
+        probar_qsv,
+        seleccionar_codificador,
+    )
+
+    disponible, motivo = probar_qsv(
+        forzar_prueba=argumentos.reprobar,
+    )
+
+    clips = seleccionar_codificador(
+        crf_cpu=27,
+        preset_cpu="veryfast",
+        preferir_qsv=False,
+    )
+
+    final = seleccionar_codificador(
+        crf_cpu=18,
+        preset_cpu="fast",
+    )
+
+    shorts = seleccionar_codificador(
+        crf_cpu=20,
+        preset_cpu="fast",
+    )
+
+    print()
+    print("DIAGNOSTICO DE CODIFICACION DE VIDEO")
+    print("=" * 72)
+    print(
+        "Intel Quick Sync:",
+        (
+            "DISPONIBLE"
+            if disponible
+            else "NO DISPONIBLE"
+        ),
+    )
+    print(
+        "Prueba:",
+        motivo,
+    )
+    print("-" * 72)
+    print(
+        "Clips:",
+        describir_codificador(
+            clips
+        ),
+    )
+    print(
+        "Render final:",
+        describir_codificador(
+            final
+        ),
+    )
+    print(
+        "Shorts:",
+        describir_codificador(
+            shorts
+        ),
+    )
+    print("-" * 72)
+    print(
+        "Recuperacion por CPU: ACTIVADA"
+    )
+    print(
+        "Modo configurable con "
+        "AUTOTUBE_VIDEO_ENCODER=auto|qsv|cpu"
+    )
+    print("=" * 72)
+
+
 def ejecutar_control_multimedia(
     argumentos: argparse.Namespace,
 ) -> None:
@@ -2365,6 +2454,10 @@ def main() -> None:
             renderizar_video(argumentos)
             return
 
+
+        if argumentos.comando == "encoder-check":
+            comprobar_codificador(argumentos)
+            return
 
         if argumentos.comando == "media-check":
             ejecutar_control_multimedia(argumentos)
