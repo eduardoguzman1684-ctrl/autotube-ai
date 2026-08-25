@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -64,10 +65,35 @@ PLAN_VISUAL_SCHEMA: dict[str, Any] = {
                                         "video_stock",
                                         "imagen_stock",
                                         "texto_animado",
+                                        "grafico",
                                     ],
                                 },
                                 "descripcion": {
                                     "type": "string",
+                                },
+                                "concepto_central": {
+                                    "type": "string",
+                                },
+                                "criterios_obligatorios": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                    },
+                                },
+                                "elementos_prohibidos": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                    },
+                                },
+                                "continuidad_id": {
+                                    "type": "string",
+                                },
+                                "consultas_alternativas": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                    },
                                 },
                                 "busqueda_es": {
                                     "type": "string",
@@ -105,6 +131,11 @@ PLAN_VISUAL_SCHEMA: dict[str, Any] = {
                                 "final_segundos",
                                 "tipo_recurso",
                                 "descripcion",
+                                "concepto_central",
+                                "criterios_obligatorios",
+                                "elementos_prohibidos",
+                                "continuidad_id",
+                                "consultas_alternativas",
                                 "busqueda_es",
                                 "busqueda_en",
                                 "movimiento",
@@ -284,13 +315,16 @@ def ajustar_duraciones_clips(
 def crear_bloques_narracion(
     segmento: dict[str, Any],
     inicio_global: float,
-    objetivo_segundos: float = 9.5,
+    objetivo_segundos: float = 7.5,
+    minimo_segundos: float = 4.5,
+    maximo_segundos: float = 9.0,
 ) -> list[dict[str, Any]]:
     """
-    Divide un segmento de voz en bloques temporales reales.
+    Divide la narracion usando limites semanticos y tiempos reales.
 
-    Cada bloque representa exactamente la parte de la narraci?n
-    que debe ilustrarse durante ese intervalo.
+    Prioriza finales de oracion, preguntas, pausas fuertes y comas.
+    Solo fuerza un corte interno cuando no existe un limite semantico
+    util dentro del intervalo permitido.
     """
     try:
         duracion = float(
@@ -304,6 +338,12 @@ def crear_bloques_narracion(
 
     if duracion <= 0:
         return []
+
+    texto = str(
+        segmento.get("texto_voz")
+        or segmento.get("texto")
+        or ""
+    ).strip()
 
     marcas_raw = segmento.get(
         "marcas_palabras",
@@ -331,8 +371,7 @@ def crear_bloques_narracion(
                         0,
                     )
                 )
-
-                final = float(
+                final_marca = float(
                     marca.get(
                         "final_segundos",
                         inicio,
@@ -341,221 +380,320 @@ def crear_bloques_narracion(
             except (TypeError, ValueError):
                 continue
 
+            inicio = max(
+                0.0,
+                min(duracion, inicio),
+            )
+            final_marca = max(
+                inicio,
+                min(duracion, final_marca),
+            )
+
             marcas.append(
                 {
                     "texto": palabra,
                     "inicio": inicio,
-                    "final": final,
+                    "final": final_marca,
                 }
             )
 
-    bloques: list[dict[str, Any]] = []
+    marcas.sort(
+        key=lambda marca: (
+            marca["inicio"],
+            marca["final"],
+        )
+    )
 
-    if marcas:
-        palabras_actuales: list[str] = []
-        inicio_bloque = 0.0
-        ultimo_final = 0.0
+    tokens_puntuados = re.findall(
+        r"\S+",
+        texto,
+    )
 
-        for marca in marcas:
-            palabras_actuales.append(
-                marca["texto"]
+    if not marcas:
+        if not tokens_puntuados:
+            tokens_puntuados = [""]
+
+        paso = duracion / len(
+            tokens_puntuados
+        )
+
+        for indice, token in enumerate(
+            tokens_puntuados
+        ):
+            marcas.append(
+                {
+                    "texto": token,
+                    "inicio": paso * indice,
+                    "final": paso * (indice + 1),
+                }
             )
 
-            ultimo_final = min(
-                duracion,
+    cierres: dict[int, tuple[int, str]] = {}
+
+    if tokens_puntuados:
+        cantidad_tokens = len(
+            tokens_puntuados
+        )
+        cantidad_marcas = len(
+            marcas
+        )
+
+        for indice in range(
+            cantidad_marcas
+        ):
+            posicion = min(
+                cantidad_tokens - 1,
                 max(
-                    ultimo_final,
-                    float(marca["final"]),
+                    0,
+                    int(
+                        (indice + 1)
+                        * cantidad_tokens
+                        / cantidad_marcas
+                    )
+                    - 1,
                 ),
             )
 
-            duracion_actual = (
-                ultimo_final
-                - inicio_bloque
+            token = tokens_puntuados[
+                posicion
+            ].rstrip(
+                "\"'???)]}"
             )
 
-            if duracion_actual >= objetivo_segundos:
-                bloques.append(
-                    {
-                        "orden": len(bloques) + 1,
-                        "inicio_relativo": round(
-                            inicio_bloque,
-                            3,
-                        ),
-                        "final_relativo": round(
-                            ultimo_final,
-                            3,
-                        ),
-                        "inicio_segundos": round(
-                            inicio_global
-                            + inicio_bloque,
-                            3,
-                        ),
-                        "final_segundos": round(
-                            inicio_global
-                            + ultimo_final,
-                            3,
-                        ),
-                        "duracion_segundos": round(
-                            ultimo_final
-                            - inicio_bloque,
-                            3,
-                        ),
-                        "texto_narrado": " ".join(
-                            palabras_actuales
-                        ).strip(),
-                    }
-                )
+            ultimo = token[-1:] if token else ""
 
-                palabras_actuales = []
-                inicio_bloque = ultimo_final
-
-        if palabras_actuales:
-            final_bloque = duracion
-
-            bloques.append(
-                {
-                    "orden": len(bloques) + 1,
-                    "inicio_relativo": round(
-                        inicio_bloque,
-                        3,
-                    ),
-                    "final_relativo": round(
-                        final_bloque,
-                        3,
-                    ),
-                    "inicio_segundos": round(
-                        inicio_global
-                        + inicio_bloque,
-                        3,
-                    ),
-                    "final_segundos": round(
-                        inicio_global
-                        + final_bloque,
-                        3,
-                    ),
-                    "duracion_segundos": round(
-                        final_bloque
-                        - inicio_bloque,
-                        3,
-                    ),
-                    "texto_narrado": " ".join(
-                        palabras_actuales
-                    ).strip(),
-                }
-            )
-
-        if bloques:
-            # Garantiza cobertura exacta del segmento.
-            bloques[0]["inicio_relativo"] = 0.0
-            bloques[0]["inicio_segundos"] = round(
-                inicio_global,
-                3,
-            )
-
-            bloques[-1]["final_relativo"] = round(
-                duracion,
-                3,
-            )
-
-            bloques[-1]["final_segundos"] = round(
-                inicio_global + duracion,
-                3,
-            )
-
-            for bloque in bloques:
-                bloque["duracion_segundos"] = round(
-                    bloque["final_segundos"]
-                    - bloque["inicio_segundos"],
+            if ultimo in ".!?":
+                cierres[indice] = (
                     3,
+                    ultimo,
+                )
+            elif ultimo in ";:":
+                cierres[indice] = (
+                    2,
+                    ultimo,
+                )
+            elif ultimo == ",":
+                cierres[indice] = (
+                    1,
+                    ultimo,
                 )
 
-            return bloques
+    bloques: list[dict[str, Any]] = []
+    indice_inicial = 0
+    inicio_bloque = 0.0
+    ultimo_indice = len(marcas) - 1
 
-    # --------------------------------------------------------
-    # Respaldo para manifiestos antiguos
-    # --------------------------------------------------------
-    texto = str(
-        segmento.get("texto_voz")
-        or segmento.get("texto")
-        or ""
-    ).strip()
-
-    palabras = texto.split()
-
-    cantidad = max(
-        1,
-        round(
-            duracion / objetivo_segundos
-        ),
-    )
-
-    if not palabras:
-        palabras = [""]
-
-    for indice in range(cantidad):
-        inicio_palabra = round(
-            len(palabras)
-            * indice
-            / cantidad
-        )
-
-        final_palabra = round(
-            len(palabras)
-            * (indice + 1)
-            / cantidad
-        )
-
-        inicio_relativo = (
+    while indice_inicial <= ultimo_indice:
+        restante = (
             duracion
-            * indice
-            / cantidad
+            - inicio_bloque
         )
 
-        final_relativo = (
+        if restante <= maximo_segundos:
+            indice_corte = ultimo_indice
+        else:
+            candidatos = [
+                indice
+                for indice in range(
+                    indice_inicial,
+                    ultimo_indice + 1,
+                )
+                if (
+                    minimo_segundos
+                    <= (
+                        marcas[indice]["final"]
+                        - inicio_bloque
+                    )
+                    <= maximo_segundos
+                )
+            ]
+
+            semanticos = [
+                indice
+                for indice in candidatos
+                if indice in cierres
+            ]
+
+            if semanticos:
+                indice_corte = max(
+                    semanticos,
+                    key=lambda indice: (
+                        cierres[indice][0],
+                        -abs(
+                            (
+                                marcas[indice]["final"]
+                                - inicio_bloque
+                            )
+                            - objetivo_segundos
+                        ),
+                    ),
+                )
+            elif candidatos:
+                indice_corte = min(
+                    candidatos,
+                    key=lambda indice: abs(
+                        (
+                            marcas[indice]["final"]
+                            - inicio_bloque
+                        )
+                        - objetivo_segundos
+                    ),
+                )
+            else:
+                disponibles = [
+                    indice
+                    for indice in range(
+                        indice_inicial,
+                        ultimo_indice + 1,
+                    )
+                    if (
+                        marcas[indice]["final"]
+                        > inicio_bloque
+                    )
+                ]
+
+                if not disponibles:
+                    break
+
+                indice_corte = min(
+                    disponibles,
+                    key=lambda indice: abs(
+                        (
+                            marcas[indice]["final"]
+                            - inicio_bloque
+                        )
+                        - objetivo_segundos
+                    ),
+                )
+
+        final_bloque = (
             duracion
-            * (indice + 1)
-            / cantidad
+            if indice_corte == ultimo_indice
+            else marcas[indice_corte]["final"]
         )
+
+        final_bloque = max(
+            inicio_bloque + 0.001,
+            min(duracion, final_bloque),
+        )
+
+        texto_bloque = " ".join(
+            str(marca["texto"])
+            for marca in marcas[
+                indice_inicial:
+                indice_corte + 1
+            ]
+        ).strip()
+
+        cierre = cierres.get(
+            indice_corte
+        )
+
+        if (
+            cierre
+            and texto_bloque
+            and texto_bloque[-1] not in ".!?,;:"
+        ):
+            texto_bloque += cierre[1]
 
         bloques.append(
             {
-                "orden": indice + 1,
+                "orden": len(bloques) + 1,
                 "inicio_relativo": round(
-                    inicio_relativo,
+                    inicio_bloque,
                     3,
                 ),
                 "final_relativo": round(
-                    final_relativo,
+                    final_bloque,
                     3,
                 ),
                 "inicio_segundos": round(
                     inicio_global
-                    + inicio_relativo,
+                    + inicio_bloque,
                     3,
                 ),
                 "final_segundos": round(
                     inicio_global
-                    + final_relativo,
+                    + final_bloque,
                     3,
                 ),
                 "duracion_segundos": round(
-                    final_relativo
-                    - inicio_relativo,
+                    final_bloque
+                    - inicio_bloque,
                     3,
                 ),
-                "texto_narrado": " ".join(
-                    palabras[
-                        inicio_palabra:
-                        final_palabra
-                    ]
-                ),
+                "texto_narrado": texto_bloque,
             }
         )
 
+        indice_inicial = indice_corte + 1
+        inicio_bloque = final_bloque
+
+    if (
+        len(bloques) > 1
+        and bloques[-1][
+            "duracion_segundos"
+        ] < minimo_segundos
+    ):
+        anterior = bloques[-2]
+        ultimo = bloques[-1]
+
+        duracion_combinada = (
+            anterior["duracion_segundos"]
+            + ultimo["duracion_segundos"]
+        )
+
+        if (
+            duracion_combinada
+            <= maximo_segundos + 1.5
+        ):
+            anterior["final_relativo"] = (
+                ultimo["final_relativo"]
+            )
+            anterior["final_segundos"] = (
+                ultimo["final_segundos"]
+            )
+            anterior["duracion_segundos"] = round(
+                anterior["final_segundos"]
+                - anterior["inicio_segundos"],
+                3,
+            )
+            anterior["texto_narrado"] = (
+                (
+                    anterior["texto_narrado"]
+                    + " "
+                    + ultimo["texto_narrado"]
+                ).strip()
+            )
+            bloques.pop()
+
+    if bloques:
+        bloques[0]["inicio_relativo"] = 0.0
+        bloques[0]["inicio_segundos"] = round(
+            inicio_global,
+            3,
+        )
+        bloques[-1]["final_relativo"] = round(
+            duracion,
+            3,
+        )
+        bloques[-1]["final_segundos"] = round(
+            inicio_global + duracion,
+            3,
+        )
+
+        for indice, bloque in enumerate(
+            bloques,
+            start=1,
+        ):
+            bloque["orden"] = indice
+            bloque["duracion_segundos"] = round(
+                bloque["final_segundos"]
+                - bloque["inicio_segundos"],
+                3,
+            )
+
     return bloques
-
-
 
 class PlanificadorVisual:
     """Crea un plan visual sincronizado con la narración."""
@@ -721,48 +859,74 @@ INSTRUCCIONES OBLIGATORIAS:
     desplazamiento vertical, corte directo o sin movimiento.
 18. texto_pantalla debe ser breve y solo cuando a?ada valor.
 19. El resultado es horizontal 1920x1080.
-20. Entre el 65 y el 75 por ciento de los clips debe ser
+20. Entre el 35 y el 45 por ciento de los clips debe ser
     imagen_stock. Estas im?genes ser?n verificadas posteriormente
     por Gemini antes de incluirlas.
 21. Usa video_stock solamente cuando exista una acci?n f?sica real
     que pueda encontrarse como video: personas trabajando,
     servidores funcionando, laboratorios, hospitales, tribunales,
     f?bricas, ciudades o equipos en movimiento.
-22. video_stock debe representar entre el 20 y el 30 por ciento
+22. video_stock debe representar entre el 25 y el 35 por ciento
     del documental. No uses videos abstractos de luces, part?culas,
     rostros rob?ticos gen?ricos o c?digos aleatorios.
-23. Usa texto_animado en un m?ximo de 5 clips en todo el documental,
+23. Usa grafico en aproximadamente el 20 al 30 por ciento
+    de los clips cuando la narracion explique procesos, arquitectura,
+    comparaciones, escalas, relaciones causales o conceptos abstractos.
+    El grafico debe usar etiquetas verificables y nunca inventar cifras.
+25. Usa texto_animado en un maximo de 5 clips en todo el documental,
     nunca m?s de uno por segmento y ?nicamente para el t?tulo,
     una pregunta central, transiciones importantes o la llamada
     a la acci?n.
 24. Cada b?squeda debe derivarse directamente del texto_narrado.
-25. Para una fotograf?a real, incluye en descripcion la frase
+26. Para una fotograf?a real, incluye en descripcion la frase
     "fotograf?a real" y describe sujeto, acci?n, lugar y contexto.
-26. Para explicar arquitectura, capas, flujo de datos o procesos
+27. Para explicar arquitectura, capas, flujo de datos o procesos
     matem?ticos, usa imagen_stock y especifica "diagrama t?cnico".
-27. busqueda_en debe contener entre 5 y 10 t?rminos concretos en
+28. busqueda_en debe contener entre 5 y 10 t?rminos concretos en
     ingl?s apropiados para Wikimedia Commons y Pixabay.
-28. Cuando exista una entidad concreta, incluye su nombre:
+29. Cuando exista una entidad concreta, incluye su nombre:
     NVIDIA H100, GPU data center, hospital MRI, courtroom,
     bank credit evaluation, transformer neural network u otra
     entidad mencionada por la narraci?n.
-29. Proh?be b?squedas gen?ricas aisladas como artificial intelligence,
+30. Proh?be b?squedas gen?ricas aisladas como artificial intelligence,
     technology, computer, future, data, digital o business.
-30. No uses una computadora dom?stica para representar un centro
+31. No uses una computadora dom?stica para representar un centro
     de datos, una GPU especializada o infraestructura de IA.
-31. No uses gr?ficos de barras, porcentajes, estad?sticas inventadas,
+32. No uses gr?ficos de barras, porcentajes, estad?sticas inventadas,
     plantillas repetitivas ni infograf?as sin datos verificables.
-32. No repitas la misma b?squeda ni el mismo sujeto visual en clips
+33. No repitas la misma b?squeda ni el mismo sujeto visual en clips
     consecutivos.
-33. Para conceptos abstractos utiliza un diagrama t?cnico real,
+34. Para conceptos abstractos utiliza un diagrama t?cnico real,
     una fotograf?a cient?fica o una aplicaci?n concreta relacionada.
-34. Si no existe una representaci?n visual precisa, describe el
+35. Si no existe una representaci?n visual precisa, describe el
     recurso como pendiente; no sustituyas el concepto por una
     imagen atractiva pero incorrecta.
-35. Antes de aceptar cada clip, comprueba que una persona pueda
+36. Antes de aceptar cada clip, comprueba que una persona pueda
     relacionar directamente el recurso con la frase narrada.
-36. No utilices el avatar NEX como sustituto de im?genes documentales.
-37. Devuelve exclusivamente el JSON solicitado.
+37. No utilices el avatar NEX como sustituto de im?genes documentales.
+38. concepto_central debe expresar en una frase corta el
+    unico significado visual que debe comunicar el clip.
+39. criterios_obligatorios debe contener entre uno y tres elementos
+    visibles y comprobables: sujeto, accion, objeto, lugar o proceso.
+40. elementos_prohibidos debe enumerar sustitutos genericos que
+    volverian incorrecta la escena. Ejemplo: no usar una reunion
+    empresarial para representar un comite cientifico.
+41. consultas_alternativas debe contener entre dos y cuatro busquedas
+    concretas, principalmente en ingles, que mantengan el mismo
+    concepto central mediante palabras diferentes.
+42. continuidad_id debe repetirse solo cuando varios clips consecutivos
+    pertenezcan a la misma secuencia visual, entidad o proceso.
+43. Para ideas abstractas, mecanismos, escalas, predicciones o
+    arquitecturas utiliza grafico antes que una fotografia generica.
+44. La descripcion debe poder evaluarse sin leer el resto del guion:
+    identifica claramente sujeto, accion, entorno y relacion narrativa.
+45. No apruebes como video_stock una accion cuyo resultado probable
+    solo coincida por palabras generales. La accion fisica debe ser
+    exactamente compatible con la narracion.
+46. Antes de devolver cada clip comprueba concepto_central,
+    criterios_obligatorios y elementos_prohibidos. Si el stock
+    probablemente fallaria, cambia el tipo_recurso a grafico.
+47. Devuelve exclusivamente el JSON solicitado.
 """.strip()
 
         resultado = self.cliente.generar_json(
@@ -941,6 +1105,68 @@ INSTRUCCIONES OBLIGATORIAS:
                     "busqueda_en",
                     "",
                 )
+
+                clip.setdefault(
+                    "concepto_central",
+                    texto_narrado,
+                )
+
+                clip.setdefault(
+                    "continuidad_id",
+                    (
+                        f"segmento_{original['numero']}_"
+                        f"clip_{indice + 1}"
+                    ),
+                )
+
+                for campo_lista in (
+                    "criterios_obligatorios",
+                    "elementos_prohibidos",
+                    "consultas_alternativas",
+                ):
+                    if not isinstance(
+                        clip.get(campo_lista),
+                        list,
+                    ):
+                        clip[campo_lista] = []
+
+                if not clip[
+                    "criterios_obligatorios"
+                ]:
+                    clip[
+                        "criterios_obligatorios"
+                    ] = [
+                        str(
+                            clip.get(
+                                "descripcion",
+                                texto_narrado,
+                            )
+                        )
+                    ]
+
+                if not clip[
+                    "consultas_alternativas"
+                ]:
+                    clip[
+                        "consultas_alternativas"
+                    ] = [
+                        consulta
+                        for consulta in (
+                            str(
+                                clip.get(
+                                    "busqueda_en",
+                                    "",
+                                )
+                            ).strip(),
+                            str(
+                                clip.get(
+                                    "busqueda_es",
+                                    "",
+                                )
+                            ).strip(),
+                        )
+                        if consulta
+                    ]
 
                 clip.setdefault(
                     "movimiento",
