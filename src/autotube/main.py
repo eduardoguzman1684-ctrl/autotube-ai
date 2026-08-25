@@ -334,6 +334,25 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Abre el panel HTML en el navegador.",
     )
 
+    dashboard_parser.add_argument(
+        "--en-vivo",
+        action="store_true",
+        help=(
+            "Actualiza automaticamente el panel "
+            "mientras el comando permanece activo."
+        ),
+    )
+
+    dashboard_parser.add_argument(
+        "--intervalo",
+        type=int,
+        default=30,
+        help=(
+            "Segundos entre actualizaciones "
+            "del panel en vivo."
+        ),
+    )
+
 
 
     storage_parser = subcomandos.add_parser(
@@ -1785,9 +1804,18 @@ def generar_dashboard(
 
     project_root = Path(__file__).resolve().parents[2]
 
-    CentroControlAutoTube(
+    dashboard = CentroControlAutoTube(
         project_root=project_root,
-    ).generar(
+    )
+
+    if argumentos.en_vivo:
+        dashboard.seguir(
+            intervalo=argumentos.intervalo,
+            abrir=argumentos.abrir,
+        )
+        return
+
+    dashboard.generar(
         abrir=argumentos.abrir,
     )
 

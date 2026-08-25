@@ -143,6 +143,140 @@ class CentroControlAutoTubeTest(unittest.TestCase):
             html,
         )
 
+    def test_html_incluye_actualizacion_automatica(
+        self,
+    ) -> None:
+        datos = self.dashboard.recopilar()
+        datos[
+            "actualizacion_automatica_segundos"
+        ] = 30
+
+        html = self.dashboard._crear_html(
+            datos
+        )
+
+        self.assertIn(
+            'http-equiv="refresh" content="30"',
+            html,
+        )
+
+    def test_publicado_limpiado_no_es_error_critico(
+        self,
+    ) -> None:
+        video = (
+            self.root
+            / "output"
+            / "videos"
+            / "render_prueba"
+            / "video_final_subtitulado_musica.mp4"
+        )
+
+        calidad = {
+            "estado": "aprobado",
+            "video": {
+                "archivo": str(video),
+                "duracion_segundos": 900,
+            },
+            "metadata": {
+                "titulo": "Documental de prueba",
+            },
+        }
+
+        publicacion = {
+            "elementos": [
+                {
+                    "estado": "publicado",
+                    "tipo": "documental",
+                    "archivo": str(video),
+                    "titulo": "Documental de prueba",
+                    "video_id": "abc123",
+                    "sha256": "hash-verificado",
+                    "url": "https://youtu.be/abc123",
+                }
+            ],
+            "estados": {
+                "publicado": 1,
+            },
+        }
+
+        pipeline = {
+            "completado": True,
+            "cantidad_completados": 11,
+            "progreso_porcentaje": 100,
+            "ultimo_error": "",
+        }
+
+        produccion = self.dashboard._produccion(
+            calidad,
+            publicacion=publicacion,
+            pipeline=pipeline,
+        )
+
+        self.assertFalse(
+            produccion["video_existe"]
+        )
+        self.assertTrue(
+            produccion["publicado"]
+        )
+        self.assertEqual(
+            produccion["estado"],
+            "publicado_sin_copia_local",
+        )
+
+        alertas = self.dashboard._alertas(
+            pipeline=pipeline,
+            calidad=calidad,
+            publicacion=publicacion,
+            almacenamiento={
+                "libre_porcentaje": 20,
+                "libre_bytes": 20 * 1024**3,
+            },
+            produccion=produccion,
+        )
+
+        self.assertFalse(
+            any(
+                alerta["nivel"] == "critica"
+                and "video final"
+                in alerta["mensaje"].lower()
+                for alerta in alertas
+            )
+        )
+
+    def test_logs_separa_error_activo_del_historico(
+        self,
+    ) -> None:
+        logs_dir = self.root / "logs"
+        logs_dir.mkdir(
+            parents=True,
+        )
+
+        (
+            logs_dir
+            / "autotube.log"
+        ).write_text(
+            (
+                "2026-01-01 | ERROR | "
+                "autotube | fallo anterior\n"
+            ),
+            encoding="utf-8",
+        )
+
+        logs = self.dashboard._logs(
+            pipeline={
+                "ultimo_error": "",
+            }
+        )
+
+        self.assertEqual(
+            logs["errores_historicos"],
+            1,
+        )
+        self.assertEqual(
+            logs["errores_activos"],
+            0,
+        )
+
     def test_generar_devuelve_datos_y_rutas(
         self,
     ) -> None:

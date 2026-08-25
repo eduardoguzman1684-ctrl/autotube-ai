@@ -3,6 +3,7 @@
 import html
 import json
 import shutil
+import time
 import webbrowser
 from collections import Counter
 from datetime import datetime
@@ -407,6 +408,8 @@ class CentroControlAutoTube:
     def _produccion(
         self,
         calidad: dict[str, Any],
+        publicacion: dict[str, Any] | None = None,
+        pipeline: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         metadata_ruta = (
             self.project_root
@@ -417,6 +420,22 @@ class CentroControlAutoTube:
 
         metadata = self._leer_json(
             metadata_ruta
+        )
+
+        publicacion = publicacion or {}
+        pipeline = pipeline or {}
+
+        titulo = str(
+            metadata.get(
+                "title",
+                calidad.get(
+                    "metadata",
+                    {},
+                ).get(
+                    "titulo",
+                    "Sin titulo",
+                ),
+            )
         )
 
         video_calidad = calidad.get(
@@ -447,6 +466,79 @@ class CentroControlAutoTube:
             and ruta_video.is_file()
         )
 
+        ruta_normalizada = (
+            str(ruta_video.resolve()).casefold()
+            if ruta_video
+            else ""
+        )
+
+        publicado: dict[str, Any] | None = None
+        elementos = publicacion.get(
+            "elementos",
+            [],
+        )
+
+        if isinstance(elementos, list):
+            for elemento in elementos:
+                if (
+                    not isinstance(elemento, dict)
+                    or elemento.get("estado") != "publicado"
+                    or not elemento.get("video_id")
+                    or not elemento.get("sha256")
+                ):
+                    continue
+
+                archivo = str(
+                    elemento.get(
+                        "archivo",
+                        "",
+                    )
+                )
+
+                coincide_ruta = bool(
+                    archivo
+                    and ruta_normalizada
+                    and str(
+                        Path(archivo).resolve()
+                    ).casefold()
+                    == ruta_normalizada
+                )
+
+                coincide_titulo = (
+                    str(
+                        elemento.get(
+                            "titulo",
+                            "",
+                        )
+                    ).strip().casefold()
+                    == titulo.strip().casefold()
+                )
+
+                if coincide_ruta or coincide_titulo:
+                    publicado = elemento
+                    break
+
+        pipeline_en_curso = bool(
+            not pipeline.get("completado")
+            and int(
+                pipeline.get(
+                    "cantidad_completados",
+                    0,
+                )
+                or 0
+            )
+            > 0
+        )
+
+        if pipeline_en_curso:
+            estado_produccion = "en_produccion"
+        elif existe_video:
+            estado_produccion = "disponible_local"
+        elif publicado:
+            estado_produccion = "publicado_sin_copia_local"
+        else:
+            estado_produccion = "sin_video"
+
         tamano = (
             ruta_video.stat().st_size
             if existe_video
@@ -460,24 +552,25 @@ class CentroControlAutoTube:
         )
 
         return {
-            "titulo": str(
-                metadata.get(
-                    "title",
-                    calidad.get(
-                        "metadata",
-                        {},
-                    ).get(
-                        "titulo",
-                        "Sin titulo",
-                    ),
-                )
-            ),
+            "titulo": titulo,
             "video": (
                 str(ruta_video)
                 if ruta_video
                 else ""
             ),
             "video_existe": existe_video,
+            "estado": estado_produccion,
+            "publicado": bool(publicado),
+            "url": (
+                str(
+                    publicado.get(
+                        "url",
+                        "",
+                    )
+                )
+                if publicado
+                else ""
+            ),
             "actualizado_en": self._fecha_archivo(
                 ruta_video
                 if isinstance(
@@ -867,7 +960,10 @@ class CentroControlAutoTube:
 
     def _logs(
         self,
+        pipeline: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        pipeline = pipeline or {}
+
         ruta = (
             self.project_root
             / "logs"
@@ -878,6 +974,8 @@ class CentroControlAutoTube:
             return {
                 "archivo": str(ruta),
                 "errores_recientes": 0,
+                "errores_historicos": 0,
+                "errores_activos": 0,
                 "advertencias_recientes": 0,
                 "ultimo_error": "",
             }
@@ -912,6 +1010,16 @@ class CentroControlAutoTube:
             ),
             "errores_recientes": len(
                 errores
+            ),
+            "errores_historicos": len(
+                errores
+            ),
+            "errores_activos": int(
+                bool(
+                    pipeline.get(
+                        "ultimo_error"
+                    )
+                )
             ),
             "advertencias_recientes": len(
                 advertencias
@@ -970,7 +1078,39 @@ class CentroControlAutoTube:
                 }
             )
 
-        if not produccion.get(
+        estado_produccion = str(
+            produccion.get(
+                "estado",
+                "sin_video",
+            )
+        )
+
+        if estado_produccion == "en_produccion":
+            alertas.append(
+                {
+                    "nivel": "informativa",
+                    "mensaje": (
+                        "La produccion esta actualmente en curso."
+                    ),
+                }
+            )
+        elif (
+            not produccion.get(
+                "video_existe"
+            )
+            and estado_produccion
+            == "publicado_sin_copia_local"
+        ):
+            alertas.append(
+                {
+                    "nivel": "informativa",
+                    "mensaje": (
+                        "Video publicado y verificado; "
+                        "la copia local fue limpiada."
+                    ),
+                }
+            )
+        elif not produccion.get(
             "video_existe"
         ):
             alertas.append(
@@ -1115,14 +1255,18 @@ class CentroControlAutoTube:
     ) -> dict[str, Any]:
         pipeline = self._estado_pipeline()
         calidad = self._calidad()
-        produccion = self._produccion(
-            calidad
-        )
         publicacion = self._publicacion()
+        produccion = self._produccion(
+            calidad,
+            publicacion=publicacion,
+            pipeline=pipeline,
+        )
         analytics = self._analytics()
         experimento = self._experimento()
         almacenamiento = self._almacenamiento()
-        logs = self._logs()
+        logs = self._logs(
+            pipeline=pipeline
+        )
 
         alertas = self._alertas(
             pipeline=pipeline,
@@ -1166,6 +1310,7 @@ class CentroControlAutoTube:
     def guardar(
         self,
         datos: dict[str, Any],
+        crear_historico: bool = True,
     ) -> dict[str, Path]:
         marca = datetime.now().strftime(
             "%Y%m%d_%H%M%S"
@@ -1209,10 +1354,13 @@ class CentroControlAutoTube:
             indent=2,
         )
 
-        historico.write_text(
-            contenido,
-            encoding="utf-8",
-        )
+        if crear_historico:
+            historico.write_text(
+                contenido,
+                encoding="utf-8",
+            )
+        else:
+            historico = actual
 
         actual.write_text(
             contenido,
@@ -1332,6 +1480,23 @@ class CentroControlAutoTube:
             {},
         )
 
+        intervalo_actualizacion = int(
+            datos.get(
+                "actualizacion_automatica_segundos",
+                0,
+            )
+            or 0
+        )
+
+        meta_actualizacion = (
+            (
+                '<meta http-equiv="refresh" '
+                f'content="{intervalo_actualizacion}">'
+            )
+            if intervalo_actualizacion >= 5
+            else ""
+        )
+
         estilos = """
 :root {
   color-scheme: dark;
@@ -1439,6 +1604,7 @@ li.informativa { color: var(--green); }
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+{meta_actualizacion}
 <title>Centro de Control AutoTube AI</title>
 <style>{estilos}</style>
 </head>
@@ -1470,6 +1636,7 @@ li.informativa { color: var(--green); }
     <div>{seguro(produccion["resolucion"])} · {seguro(produccion["fps"])} FPS</div>
     <div>{seguro(produccion["tamano"])}</div>
     <p>{seguro(produccion["titulo"])}</p>
+    <div>Estado: {seguro(produccion.get("estado", "sin_video"))}</div>
   </article>
 
   <article class="card">
@@ -1514,9 +1681,10 @@ li.informativa { color: var(--green); }
 
   <article class="card wide">
     <h2>Registros recientes</h2>
-    <div class="metric">{seguro(logs["errores_recientes"])} errores</div>
+    <div class="metric">{seguro(logs.get("errores_activos", 0))} errores activos</div>
+    <div>Errores historicos: {seguro(logs.get("errores_historicos", 0))}</div>
     <div>Advertencias: {seguro(logs["advertencias_recientes"])}</div>
-    <p class="path">{seguro(logs.get("ultimo_error", "") or "Sin errores registrados.")}</p>
+    <p class="path">{seguro(pipeline.get("ultimo_error", "") or "Sin errores activos.")}</p>
   </article>
 
   <article class="card wide">
@@ -1663,8 +1831,16 @@ li.informativa { color: var(--green); }
         )
         print(
             "Logs recientes:",
-            logs["errores_recientes"],
-            "errores |",
+            logs.get(
+                "errores_activos",
+                0,
+            ),
+            "errores activos |",
+            logs.get(
+                "errores_historicos",
+                0,
+            ),
+            "historicos |",
             logs["advertencias_recientes"],
             "advertencias",
         )
@@ -1692,16 +1868,30 @@ li.informativa { color: var(--green); }
     def generar(
         self,
         abrir: bool = False,
+        actualizacion_automatica_segundos: int = 0,
+        crear_historico: bool = True,
+        imprimir: bool = True,
     ) -> dict[str, Any]:
         datos = self.recopilar()
-        rutas = self.guardar(
-            datos
+        datos[
+            "actualizacion_automatica_segundos"
+        ] = max(
+            0,
+            int(
+                actualizacion_automatica_segundos
+            ),
         )
 
-        self.imprimir(
+        rutas = self.guardar(
             datos,
-            rutas,
+            crear_historico=crear_historico,
         )
+
+        if imprimir:
+            self.imprimir(
+                datos,
+                rutas,
+            )
 
         if abrir:
             webbrowser.open(
@@ -1712,3 +1902,50 @@ li.informativa { color: var(--green); }
             "datos": datos,
             "rutas": rutas,
         }
+
+    def seguir(
+        self,
+        intervalo: int = 30,
+        abrir: bool = True,
+    ) -> dict[str, Any]:
+        intervalo = max(
+            5,
+            int(
+                intervalo
+            ),
+        )
+
+        resultado = self.generar(
+            abrir=abrir,
+            actualizacion_automatica_segundos=intervalo,
+        )
+
+        print(
+            "Actualizacion automatica:",
+            f"cada {intervalo} segundos.",
+        )
+        print(
+            "Presiona Ctrl+C para detener "
+            "solo la actualizacion del panel."
+        )
+
+        try:
+            while True:
+                time.sleep(
+                    intervalo
+                )
+
+                resultado = self.generar(
+                    abrir=False,
+                    actualizacion_automatica_segundos=intervalo,
+                    crear_historico=False,
+                    imprimir=False,
+                )
+
+        except KeyboardInterrupt:
+            print()
+            print(
+                "Actualizacion automatica detenida."
+            )
+
+        return resultado
