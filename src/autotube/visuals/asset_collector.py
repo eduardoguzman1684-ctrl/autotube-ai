@@ -434,7 +434,7 @@ class RecolectorRecursos:
         self.cliente_pexels = ClientePexels()
 
         self.verificador_visual = VerificadorVisualGemini(
-            umbral=75,
+            umbral=88,
         )
 
         self.detener_recoleccion = False
@@ -455,6 +455,24 @@ class RecolectorRecursos:
         self,
         clip: dict[str, Any],
     ) -> list[str]:
+        alternativas_raw = clip.get(
+            "consultas_alternativas",
+            [],
+        )
+
+        alternativas = (
+            [
+                str(consulta)
+                for consulta in alternativas_raw
+                if str(consulta).strip()
+            ]
+            if isinstance(
+                alternativas_raw,
+                list,
+            )
+            else []
+        )
+
         valores = [
             str(
                 clip.get(
@@ -462,9 +480,16 @@ class RecolectorRecursos:
                     "",
                 )
             ),
+            *alternativas,
             str(
                 clip.get(
                     "busqueda_es",
+                    "",
+                )
+            ),
+            str(
+                clip.get(
+                    "concepto_central",
                     "",
                 )
             ),
@@ -497,11 +522,238 @@ class RecolectorRecursos:
 
         return consultas
 
+    def _evaluar_metadata_video(
+        self,
+        resultado: dict[str, Any],
+        consulta: str,
+    ) -> dict[str, Any]:
+        """Valida el titulo autentico antes de descargar un video."""
+        fuente = str(
+            resultado.get(
+                "_fuente",
+                "pixabay",
+            )
+        ).lower()
+
+        pagina = str(
+            resultado.get(
+                "pageURL",
+                "",
+            )
+        )
+
+        ruta_pagina = urllib.parse.unquote(
+            urllib.parse.urlparse(
+                pagina
+            ).path
+        ).replace(
+            "-",
+            " ",
+        ).replace(
+            "_",
+            " ",
+        )
+
+        descripcion = str(
+            resultado.get(
+                "descripcion_original",
+                "",
+            )
+        )
+
+        etiquetas = str(
+            resultado.get(
+                "tags",
+                "",
+            )
+        )
+
+        partes_metadata = [
+            ruta_pagina,
+            descripcion,
+        ]
+
+        if (
+            fuente != "pexels"
+            and etiquetas.strip().lower()
+            != consulta.strip().lower()
+        ):
+            partes_metadata.append(
+                etiquetas
+            )
+
+        familias = {
+            "research": {
+                "research",
+                "researcher",
+                "researchers",
+                "scientist",
+                "scientists",
+                "scientific",
+            },
+            "laboratory": {
+                "lab",
+                "labs",
+                "laboratory",
+                "laboratories",
+            },
+            "network": {
+                "network",
+                "networks",
+            },
+            "server": {
+                "server",
+                "servers",
+            },
+            "robot": {
+                "robot",
+                "robots",
+                "robotic",
+                "robotics",
+            },
+            "graph": {
+                "graph",
+                "graphs",
+            },
+            "processor": {
+                "processor",
+                "processors",
+                "processing",
+            },
+        }
+
+        equivalencias = {
+            variante: familia
+            for familia, variantes in familias.items()
+            for variante in variantes
+        }
+
+        genericas = {
+            "ai",
+            "analyzing",
+            "animation",
+            "business",
+            "close",
+            "closeup",
+            "computer",
+            "computers",
+            "digital",
+            "footage",
+            "future",
+            "high",
+            "intelligence",
+            "man",
+            "modern",
+            "monitor",
+            "monitoring",
+            "monitors",
+            "people",
+            "person",
+            "professional",
+            "screen",
+            "screens",
+            "stock",
+            "technology",
+            "video",
+            "woman",
+            "work",
+            "working",
+        }
+
+        def claves(
+            contenido: str,
+        ) -> set[str]:
+            return {
+                equivalencias.get(
+                    palabra,
+                    palabra,
+                )
+                for palabra in self._palabras_tematicas(
+                    contenido
+                )
+                if palabra not in genericas
+                and not palabra.isdigit()
+            }
+
+        claves_consulta = claves(
+            consulta
+        )
+
+        claves_metadata = claves(
+            " ".join(
+                partes_metadata
+            )
+        )
+
+        coincidencias = sorted(
+            claves_consulta
+            & claves_metadata
+        )
+
+        minimo = (
+            1
+            if len(claves_consulta) <= 4
+            else 2
+        )
+
+        aprobada = bool(
+            claves_consulta
+            and claves_metadata
+            and len(coincidencias) >= minimo
+        )
+
+        puntaje = round(
+            100
+            * len(coincidencias)
+            / max(
+                1,
+                len(claves_consulta),
+            )
+        )
+
+        return {
+            "aprobada": aprobada,
+            "puntaje": min(
+                100,
+                puntaje,
+            ),
+            "coincidencias": coincidencias,
+            "consulta": consulta,
+            "pagina": pagina,
+            "fuente": fuente,
+            "motivo": (
+                "La metadata autentica coincide."
+                if aprobada
+                else (
+                    "El titulo autentico del video "
+                    "no coincide suficientemente "
+                    "con la consulta."
+                )
+            ),
+        }
+
     def _seleccionar_video(
         self,
         resultados: list[dict[str, Any]],
+        consulta: str = "",
     ) -> dict[str, Any] | None:
         for resultado in resultados:
+            verificacion_metadata = (
+                self._evaluar_metadata_video(
+                    resultado=resultado,
+                    consulta=consulta,
+                )
+            )
+
+            if not verificacion_metadata[
+                "aprobada"
+            ]:
+                print(
+                    "  VIDEO RECHAZADO POR METADATA: "
+                    f"{resultado.get('pageURL', '')}"
+                )
+                continue
+
             try:
                 identificador = int(
                     resultado.get("id")
@@ -641,6 +893,9 @@ class RecolectorRecursos:
                 "descripcion_original": resultado.get(
                     "descripcion_original",
                     "",
+                ),
+                "verificacion_metadata": (
+                    verificacion_metadata
                 ),
             }
 
@@ -1107,17 +1362,125 @@ class RecolectorRecursos:
         self,
         clip: dict[str, Any],
     ) -> str:
-        partes = [
-            str(clip.get("descripcion", "")),
-            str(clip.get("texto_narrado", "")),
-            str(clip.get("busqueda_en", "")),
-            str(clip.get("busqueda_es", "")),
+        """Construye un contrato visual verificable para el clip."""
+        concepto = str(
+            clip.get(
+                "concepto_central",
+                "",
+            )
+            or clip.get(
+                "descripcion",
+                "",
+            )
+        ).strip()
+
+        descripcion = str(
+            clip.get(
+                "descripcion",
+                "",
+            )
+        ).strip()
+
+        narracion = str(
+            clip.get(
+                "texto_narrado",
+                "",
+            )
+        ).strip()
+
+        criterios_raw = clip.get(
+            "criterios_obligatorios",
+            [],
+        )
+
+        prohibidos_raw = clip.get(
+            "elementos_prohibidos",
+            [],
+        )
+
+        alternativas_raw = clip.get(
+            "consultas_alternativas",
+            [],
+        )
+
+        criterios = (
+            [
+                str(valor).strip()
+                for valor in criterios_raw
+                if str(valor).strip()
+            ]
+            if isinstance(
+                criterios_raw,
+                list,
+            )
+            else []
+        )
+
+        prohibidos = (
+            [
+                str(valor).strip()
+                for valor in prohibidos_raw
+                if str(valor).strip()
+            ]
+            if isinstance(
+                prohibidos_raw,
+                list,
+            )
+            else []
+        )
+
+        alternativas = (
+            [
+                str(valor).strip()
+                for valor in alternativas_raw
+                if str(valor).strip()
+            ]
+            if isinstance(
+                alternativas_raw,
+                list,
+            )
+            else []
+        )
+
+        if not criterios and descripcion:
+            criterios = [
+                descripcion,
+            ]
+
+        secciones = [
+            (
+                "CONCEPTO CENTRAL: "
+                + concepto
+            ),
+            (
+                "DESCRIPCION OBJETIVO: "
+                + descripcion
+            ),
+            "CRITERIOS OBLIGATORIOS:",
+            *[
+                "- " + criterio
+                for criterio in criterios
+            ],
+            "ELEMENTOS PROHIBIDOS:",
+            *[
+                "- " + prohibido
+                for prohibido in prohibidos
+            ],
+            (
+                "CONTEXTO NARRADO: "
+                + narracion[:600]
+            ),
+            "BUSQUEDAS ALTERNATIVAS:",
+            *[
+                "- " + alternativa
+                for alternativa in alternativas
+            ],
         ]
 
         return "\n".join(
-            parte.strip()
-            for parte in partes
-            if parte.strip()
+            seccion
+            for seccion in secciones
+            if seccion.strip()
         )
 
     def _ruta_cache_selecciones(
@@ -1676,20 +2039,17 @@ class RecolectorRecursos:
                     resultados[
                         identificador_respaldo
                     ] = {
-                        "seleccion": (
-                            1
-                            if recursos_respaldo
-                            else 0
-                        ),
-                        "aprobada": bool(
-                            recursos_respaldo
-                        ),
+                        "seleccion": 0,
+                        "aprobada": False,
                         "puntaje": 0,
                         "motivo": (
-                            "Seleccion local de respaldo; "
-                            "Gemini no disponible."
+                            "Verificacion remota no disponible; "
+                            "se prohibe aprobar stock sin validar."
                         ),
-                        "respaldo_local": True,
+                        "verificacion_degradada": True,
+                        "candidatos_disponibles": len(
+                            recursos_respaldo
+                        ),
                     }
 
             for grupo in grupos_pendientes:
@@ -1827,10 +2187,9 @@ class RecolectorRecursos:
                     "id": identificador,
                     "imagenes": imagenes,
                     "requisito_visual": (
-                        "CONCEPTO CENTRAL: "
-                        f"{consulta}\n"
-                        "CONTEXTO NARRADO: "
-                        f"{str(clip.get('texto_narrado', ''))[:600]}"
+                        self._requisito_visual(
+                            clip
+                        )
                     ),
                 }
             )
@@ -2103,7 +2462,8 @@ class RecolectorRecursos:
                             resultado["_fuente"] = fuente
 
                     recurso = self._seleccionar_video(
-                        resultados
+                        resultados,
+                        consulta=consulta,
                     )
 
                     if recurso is not None:

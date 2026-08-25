@@ -3,6 +3,9 @@ from __future__ import annotations
 import re
 import unittest
 
+from autotube.visuals.asset_collector import (
+    RecolectorRecursos,
+)
 from autotube.visuals.visual_planner import (
     PLAN_VISUAL_SCHEMA,
     crear_bloques_narracion,
@@ -229,6 +232,163 @@ class CoherenciaPlanVisualTest(unittest.TestCase):
         )
         self.assertTrue(
             campos.issubset(requeridos)
+        )
+
+
+    def test_rechaza_video_pexels_con_tags_copiados(
+        self,
+    ) -> None:
+        recolector = RecolectorRecursos.__new__(
+            RecolectorRecursos
+        )
+
+        consulta = (
+            "ai researchers analyzing "
+            "neural network graphs monitors"
+        )
+
+        evaluacion = (
+            recolector._evaluar_metadata_video(
+                resultado={
+                    "_fuente": "pexels",
+                    "pageURL": (
+                        "https://www.pexels.com/video/"
+                        "man-monitoring-the-stocks-7579951/"
+                    ),
+                    "tags": consulta,
+                },
+                consulta=consulta,
+            )
+        )
+
+        self.assertFalse(
+            evaluacion["aprobada"]
+        )
+        self.assertEqual(
+            evaluacion["coincidencias"],
+            [],
+        )
+
+    def test_acepta_video_con_titulo_autentico_coherente(
+        self,
+    ) -> None:
+        recolector = RecolectorRecursos.__new__(
+            RecolectorRecursos
+        )
+
+        evaluacion = (
+            recolector._evaluar_metadata_video(
+                resultado={
+                    "_fuente": "pexels",
+                    "pageURL": (
+                        "https://www.pexels.com/video/"
+                        "scientists-analyzing-neural-network-"
+                        "in-laboratory-123456/"
+                    ),
+                    "tags": "consulta copiada",
+                },
+                consulta=(
+                    "ai researchers analyzing "
+                    "neural network graphs monitors"
+                ),
+            )
+        )
+
+        self.assertTrue(
+            evaluacion["aprobada"]
+        )
+        self.assertIn(
+            "neural",
+            evaluacion["coincidencias"],
+        )
+        self.assertIn(
+            "research",
+            evaluacion["coincidencias"],
+        )
+
+    def test_requisito_visual_incluye_contrato_estricto(
+        self,
+    ) -> None:
+        recolector = RecolectorRecursos.__new__(
+            RecolectorRecursos
+        )
+
+        requisito = recolector._requisito_visual(
+            {
+                "concepto_central": (
+                    "Comite cientifico sobre etica de IA"
+                ),
+                "descripcion": (
+                    "Investigadores debaten en laboratorio"
+                ),
+                "criterios_obligatorios": [
+                    "cientificos identificables",
+                    "entorno de investigacion",
+                ],
+                "elementos_prohibidos": [
+                    "reunion empresarial generica",
+                ],
+                "consultas_alternativas": [
+                    "AI ethics scientific committee",
+                ],
+                "texto_narrado": (
+                    "Los expertos estudian sus riesgos."
+                ),
+            }
+        )
+
+        self.assertIn(
+            "CONCEPTO CENTRAL:",
+            requisito,
+        )
+        self.assertIn(
+            "CRITERIOS OBLIGATORIOS:",
+            requisito,
+        )
+        self.assertIn(
+            "ELEMENTOS PROHIBIDOS:",
+            requisito,
+        )
+        self.assertIn(
+            "reunion empresarial generica",
+            requisito,
+        )
+
+    def test_consultas_alternativas_se_utilizan(
+        self,
+    ) -> None:
+        recolector = RecolectorRecursos.__new__(
+            RecolectorRecursos
+        )
+
+        consultas = recolector._consultas_clip(
+            {
+                "busqueda_en": (
+                    "scientists AI ethics committee"
+                ),
+                "consultas_alternativas": [
+                    "research laboratory ethics meeting",
+                    "scientific panel artificial intelligence",
+                ],
+                "busqueda_es": (
+                    "cientificos comite etica IA"
+                ),
+                "concepto_central": (
+                    "comite cientifico"
+                ),
+                "descripcion": (
+                    "investigadores debatiendo"
+                ),
+            }
+        )
+
+        self.assertIn(
+            "research laboratory ethics meeting",
+            consultas,
+        )
+        self.assertIn(
+            "scientific panel artificial intelligence",
+            consultas,
         )
 
 

@@ -18,7 +18,7 @@ class VerificadorVisualGemini:
     def __init__(
         self,
         cliente: GeminiClient | None = None,
-        umbral: int = 75,
+        umbral: int = 88,
     ) -> None:
         self.cliente = cliente or GeminiClient()
         self.umbral = max(0, min(100, umbral))
@@ -370,6 +370,15 @@ class VerificadorVisualGemini:
                             "aprobada": {
                                 "type": "boolean",
                             },
+                            "cumple_concepto": {
+                                "type": "boolean",
+                            },
+                            "cumple_obligatorios": {
+                                "type": "boolean",
+                            },
+                            "viola_prohibidos": {
+                                "type": "boolean",
+                            },
                             "descripcion": {
                                 "type": "string",
                             },
@@ -382,6 +391,9 @@ class VerificadorVisualGemini:
                             "seleccion",
                             "puntaje",
                             "aprobada",
+                            "cumple_concepto",
+                            "cumple_obligatorios",
+                            "viola_prohibidos",
                             "descripcion",
                             "motivo",
                         ],
@@ -415,20 +427,25 @@ Reglas obligatorias:
 
 - Devuelve exactamente un resultado por cada ID.
 - seleccion indica la columna elegida dentro de su propia fila.
-- Si ninguna opci?n alcanza {self.umbral}/100, usa seleccion=0.
-- En ese caso tambi?n usa aprobada=false.
-- Eval?a primero el CONCEPTO CENTRAL indicado para cada fila.
-- La narraci?n es contexto y no una lista de detalles obligatorios.
-- Acepta B-roll profesional que represente claramente el concepto,
-  aunque no coincidan detalles secundarios como ?poca, color,
-  cantidad de personas, marca, tipo exacto de monitor o interfaz.
-- No exijas que todos los elementos de la frase aparezcan literalmente.
-- Rechaza ?nicamente im?genes sin relaci?n clara con el concepto.
-- No confundas computadoras dom?sticas con hardware especializado de IA
-  cuando el concepto central sea espec?ficamente hardware de IA.
-- Si una persona puede relacionar razonablemente la imagen con el
-  concepto narrado, puede aprobarse.
-- No cruces im?genes entre filas.
+- Evalua primero el CONCEPTO CENTRAL.
+- Comprueba uno por uno todos los CRITERIOS OBLIGATORIOS.
+- Comprueba que no aparezca ningun ELEMENTO PROHIBIDO.
+- cumple_concepto solo puede ser true cuando la imagen comunica
+  directamente el concepto central, sin depender de una metafora.
+- cumple_obligatorios solo puede ser true cuando todos los elementos
+  obligatorios visualmente comprobables aparecen.
+- viola_prohibidos debe ser true cuando aparezca cualquier sustituto
+  o elemento expresamente prohibido.
+- aprobada solo puede ser true cuando cumple_concepto=true,
+  cumple_obligatorios=true, viola_prohibidos=false y el puntaje
+  alcanza {self.umbral}/100.
+- Si falla una sola condicion usa seleccion=0 y aprobada=false.
+- No aceptes reuniones empresariales como comites cientificos.
+- No aceptes operadores financieros como investigadores de IA.
+- No aceptes computadoras domesticas como servidores, GPU
+  especializada, superordenadores o centros de datos.
+- No aceptes una imagen solo porque comparte palabras generales.
+- No cruces imagenes entre filas.
 """
 
         config = types.GenerateContentConfig(
@@ -498,11 +515,35 @@ Reglas obligatorias:
                 )
             )
 
+            cumple_concepto = bool(
+                resultado.get(
+                    "cumple_concepto",
+                    False,
+                )
+            )
+
+            cumple_obligatorios = bool(
+                resultado.get(
+                    "cumple_obligatorios",
+                    False,
+                )
+            )
+
+            viola_prohibidos = bool(
+                resultado.get(
+                    "viola_prohibidos",
+                    True,
+                )
+            )
+
             if (
                 seleccion < 1
                 or seleccion > cantidad
                 or puntaje < self.umbral
                 or not aprobada
+                or not cumple_concepto
+                or not cumple_obligatorios
+                or viola_prohibidos
             ):
                 resultado["seleccion"] = 0
                 resultado["aprobada"] = False
@@ -554,6 +595,15 @@ Reglas obligatorias:
                 "aprobada": {
                     "type": "boolean",
                 },
+                "cumple_concepto": {
+                    "type": "boolean",
+                },
+                "cumple_obligatorios": {
+                    "type": "boolean",
+                },
+                "viola_prohibidos": {
+                    "type": "boolean",
+                },
                 "descripcion": {
                     "type": "string",
                 },
@@ -565,6 +615,9 @@ Reglas obligatorias:
                 "seleccion",
                 "puntaje",
                 "aprobada",
+                "cumple_concepto",
+                "cumple_obligatorios",
+                "viola_prohibidos",
                 "descripcion",
                 "motivo",
             ],
@@ -582,13 +635,21 @@ Selecciona la imagen que represente con mayor precisiÃ³n el
 requisito visual.
 
 Reglas:
+
+- Evalua directamente el CONCEPTO CENTRAL.
+- Comprueba todos los CRITERIOS OBLIGATORIOS.
+- Rechaza cualquier ELEMENTO PROHIBIDO.
 - No elijas una imagen solamente porque sea atractiva.
-- Rechaza imÃ¡genes genÃ©ricas o conceptualmente incorrectas.
-- Si ninguna alcanza {self.umbral}/100, usa seleccion=0
-  y aprobada=false.
-- No confundas una computadora domÃ©stica con hardware
-  especializado de inteligencia artificial.
-- La selecciÃ³n debe coincidir directamente con la narraciÃ³n.
+- Rechaza imagenes genericas o conceptualmente aproximadas.
+- cumple_concepto requiere coincidencia visual directa.
+- cumple_obligatorios requiere todos los elementos observables.
+- viola_prohibidos debe ser true si aparece un elemento prohibido.
+- aprobada solo puede ser true cuando cumple_concepto=true,
+  cumple_obligatorios=true, viola_prohibidos=false y el puntaje
+  alcanza {self.umbral}/100.
+- Si falla una condicion usa seleccion=0 y aprobada=false.
+- No confundas computadoras domesticas con hardware especializado.
+- La seleccion debe coincidir directamente con la narracion.
 """
 
         config = types.GenerateContentConfig(
@@ -621,11 +682,35 @@ Reglas:
             resultado.get("aprobada", False)
         )
 
+        cumple_concepto = bool(
+            resultado.get(
+                "cumple_concepto",
+                False,
+            )
+        )
+
+        cumple_obligatorios = bool(
+            resultado.get(
+                "cumple_obligatorios",
+                False,
+            )
+        )
+
+        viola_prohibidos = bool(
+            resultado.get(
+                "viola_prohibidos",
+                True,
+            )
+        )
+
         if (
             seleccion < 1
             or seleccion > len(candidatas)
             or puntaje < self.umbral
             or not aprobada
+            or not cumple_concepto
+            or not cumple_obligatorios
+            or viola_prohibidos
         ):
             resultado["seleccion"] = 0
             resultado["aprobada"] = False
