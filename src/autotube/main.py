@@ -389,6 +389,16 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Omite el analisis multimedia profundo.",
     )
 
+
+    guardian_parser.add_argument(
+        "--sin-limpiar-publicados",
+        action="store_true",
+        help=(
+            "Conserva los MP4 locales despues "
+            "de publicarlos."
+        ),
+    )
+
     scheduler_parser = subcomandos.add_parser(
         "scheduler",
         help=(
@@ -1839,6 +1849,9 @@ def ejecutar_guardian_automatico(
         publicar=not argumentos.sin_publicar,
         control_profundo=(
             not argumentos.sin_control_profundo
+        ),
+        limpiar_publicados=(
+            not argumentos.sin_limpiar_publicados
         ),
     )
 

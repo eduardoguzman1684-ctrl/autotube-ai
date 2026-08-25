@@ -605,6 +605,7 @@ class GuardianPipeline:
         self,
         publicar: bool = True,
         control_profundo: bool = True,
+        limpiar_publicados: bool = True,
     ) -> list[dict[str, Any]]:
         base = self._comando_base()
         comandos: list[dict[str, Any]] = []
@@ -653,6 +654,27 @@ class GuardianPipeline:
             }
         )
 
+        if (
+            publicar
+            and limpiar_publicados
+        ):
+            comandos.append(
+                {
+                    "nombre": (
+                        "Limpieza de publicaciones "
+                        "verificadas"
+                    ),
+                    "comando": (
+                        base
+                        + [
+                            "storage-clean",
+                            "--publicados",
+                            "--confirmar",
+                        ]
+                    ),
+                }
+            )
+
         return comandos
 
     def _guardar_informe(
@@ -688,6 +710,7 @@ class GuardianPipeline:
         dry_run: bool = False,
         publicar: bool = True,
         control_profundo: bool = True,
+        limpiar_publicados: bool = True,
     ) -> dict[str, Any]:
         preflight = self.preflight(
             comprobar_bloqueo=True,
@@ -696,6 +719,7 @@ class GuardianPipeline:
         comandos = self.construir_comandos(
             publicar=publicar,
             control_profundo=control_profundo,
+            limpiar_publicados=limpiar_publicados,
         )
 
         informe: dict[str, Any] = {
@@ -705,7 +729,9 @@ class GuardianPipeline:
             "estado": "simulacion",
             "dry_run": dry_run,
             "publicar": publicar,
+
             "control_profundo": control_profundo,
+            "limpiar_publicados": limpiar_publicados,
             "preflight": preflight,
             "comandos": [
                 {

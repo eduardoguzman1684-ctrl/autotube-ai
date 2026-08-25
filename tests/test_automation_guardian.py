@@ -111,9 +111,12 @@ class GuardianPipelineTest(unittest.TestCase):
             self.guardian.construir_comandos()
         )
 
-        pipeline = comandos[-1][
-            "comando"
-        ]
+        pipeline = next(
+            item["comando"]
+            for item in comandos
+            if item["nombre"]
+            == "Pipeline de produccion"
+        )
 
         self.assertIn(
             "--reanudar",
@@ -138,10 +141,57 @@ class GuardianPipelineTest(unittest.TestCase):
             self.guardian.construir_comandos()
         )
 
+        pipeline = next(
+            item["comando"]
+            for item in comandos
+            if item["nombre"]
+            == "Pipeline de produccion"
+        )
+
         self.assertNotIn(
             "--reanudar",
-            comandos[-1]["comando"],
+            pipeline,
         )
+
+    def test_limpieza_verificada_ocurre_despues_del_pipeline(
+        self,
+    ) -> None:
+        comandos = (
+            self.guardian.construir_comandos(
+                publicar=True,
+                limpiar_publicados=True,
+            )
+        )
+
+        self.assertEqual(
+            comandos[-1]["nombre"],
+            "Limpieza de publicaciones verificadas",
+        )
+
+        self.assertEqual(
+            comandos[-1]["comando"][-3:],
+            [
+                "storage-clean",
+                "--publicados",
+                "--confirmar",
+            ],
+        )
+
+        sin_publicar = (
+            self.guardian.construir_comandos(
+                publicar=False,
+                limpiar_publicados=True,
+            )
+        )
+
+        self.assertNotIn(
+            "Limpieza de publicaciones verificadas",
+            [
+                item["nombre"]
+                for item in sin_publicar
+            ],
+        )
+
 
     def test_bloqueo_impide_segunda_ejecucion(
         self,
