@@ -190,13 +190,13 @@ def crear_parser() -> argparse.ArgumentParser:
 
     voice_parser.add_argument(
         "--velocidad",
-        default="-4%",
+        default="-2%",
         help="Velocidad de la narración.",
     )
 
     voice_parser.add_argument(
         "--tono",
-        default="-2Hz",
+        default="-1Hz",
         help="Ajuste del tono de voz.",
     )
 
@@ -699,13 +699,13 @@ def crear_parser() -> argparse.ArgumentParser:
 
     run_parser.add_argument(
         "--velocidad",
-        default="-4%",
+        default="-2%",
         help="Velocidad de narraci?n.",
     )
 
     run_parser.add_argument(
         "--tono",
-        default="-2Hz",
+        default="-1Hz",
         help="Tono de narraci?n.",
     )
 

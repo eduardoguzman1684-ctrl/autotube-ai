@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -17,11 +18,25 @@ from autotube.content.script_validator import localizar_guion
 
 
 VOZ_PREDETERMINADA = "es-MX-JorgeNeural"
-VELOCIDAD_PREDETERMINADA = "-4%"
-TONO_PREDETERMINADO = "-2Hz"
+VELOCIDAD_PREDETERMINADA = "-2%"
+TONO_PREDETERMINADO = "-1Hz"
 VOLUMEN_PREDETERMINADO = "+0%"
 TIEMPO_MAXIMO_SEGMENTO = 120
 PAUSA_ENTRE_SEGMENTOS = 1.0
+
+FILTRO_MASTER_VOZ = (
+    "highpass=f=70,"
+    "lowpass=f=11000,"
+    "acompressor="
+    "threshold=-20dB:"
+    "ratio=2.5:"
+    "attack=15:"
+    "release=180:"
+    "makeup=2dB,"
+    "loudnorm=I=-16:LRA=7:TP=-1.5"
+)
+
+PERFIL_VOZ_VERSION = "documental_profesional_v1"
 
 logger = logging.getLogger("autotube.voice")
 
@@ -245,6 +260,119 @@ def normalizar_texto_voz(
     """Convierte números escritos con dígitos a español."""
     texto = str(texto)
 
+    reemplazos_tecnicos = [
+        (
+            r"\bAGI\b",
+            "inteligencia artificial general",
+        ),
+        (
+            r"\bIAs\b",
+            "sistemas de inteligencia artificial",
+        ),
+        (
+            r"\bIA\b",
+            "inteligencia artificial",
+        ),
+        (
+            r"\bGPUs\b",
+            "ge pe us",
+        ),
+        (
+            r"\bGPU\b",
+            "ge pe u",
+        ),
+        (
+            r"\bCPUs\b",
+            "ce pe us",
+        ),
+        (
+            r"\bCPU\b",
+            "ce pe u",
+        ),
+        (
+            r"\bLLMs\b",
+            "modelos ele ele eme",
+        ),
+        (
+            r"\bLLM\b",
+            "modelo ele ele eme",
+        ),
+        (
+            r"\bAPIs\b",
+            "a pe is",
+        ),
+        (
+            r"\bAPI\b",
+            "a pe i",
+        ),
+        (
+            r"\bChatGPT\b",
+            "Chat ge pe te",
+        ),
+        (
+            r"\bGPT\b",
+            "ge pe te",
+        ),
+        (
+            r"\bOpenAI\b",
+            "Open A I",
+        ),
+        (
+            r"\bNVIDIA\b",
+            "envidia",
+        ),
+        (
+            r"\bVRAM\b",
+            "memoria ve ram",
+        ),
+        (
+            r"\bRAM\b",
+            "memoria ram",
+        ),
+        (
+            r"\bTTS\b",
+            "te te ese",
+        ),
+        (
+            r"\bURL\b",
+            "u erre ele",
+        ),
+    ]
+
+    for patron, pronunciacion in reemplazos_tecnicos:
+        texto = re.sub(
+            patron,
+            pronunciacion,
+            texto,
+            flags=re.IGNORECASE,
+        )
+
+    texto = re.sub(
+        r"\bmodelos\s+modelos? ele ele eme\b",
+        "modelos ele ele eme",
+        texto,
+        flags=re.IGNORECASE,
+    )
+
+    texto = re.sub(
+        r"\bmodelo\s+modelo ele ele eme\b",
+        "modelo ele ele eme",
+        texto,
+        flags=re.IGNORECASE,
+    )
+
+    texto = re.sub(
+        r"\s+([,.;:!?])",
+        r"\1",
+        texto,
+    )
+
+    texto = re.sub(
+        r"([.!?])(?=[A-Z??????])",
+        r"\1 ",
+        texto,
+    )
+
     def reemplazar_porcentaje(
         coincidencia: re.Match[str],
     ) -> str:
@@ -339,6 +467,32 @@ def normalizar_texto_voz(
         " ",
         texto,
     ).strip()
+
+
+def crear_huella_audio(
+    texto: str,
+    voz: str,
+    velocidad: str,
+    tono: str,
+    volumen: str,
+) -> str:
+    """Crea una huella reproducible de texto y configuracion."""
+    configuracion = {
+        "version": PERFIL_VOZ_VERSION,
+        "texto": texto,
+        "voz": voz,
+        "velocidad": velocidad,
+        "tono": tono,
+        "volumen": volumen,
+    }
+
+    return hashlib.sha256(
+        json.dumps(
+            configuracion,
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def cargar_guion_audio(
@@ -694,10 +848,12 @@ class GeneradorVoz:
                     "-i",
                     str(lista),
                     "-vn",
+                    "-af",
+                    FILTRO_MASTER_VOZ,
                     "-c:a",
                     "libmp3lame",
                     "-b:a",
-                    "128k",
+                    "192k",
                     str(destino),
                 ],
                 capture_output=True,
@@ -791,10 +947,82 @@ class GeneradorVoz:
                 / f"{posicion:02d}_{nombre}.mp3"
             )
 
+            texto_original = str(
+                segmento["texto"]
+            )
+
+            texto_voz_normalizado = (
+                normalizar_texto_voz(
+                    texto_original
+                )
+            )
+
+            huella_audio = crear_huella_audio(
+                texto=texto_voz_normalizado,
+                voz=self.voz,
+                velocidad=self.velocidad,
+                tono=self.tono,
+                volumen=self.volumen,
+            )
+
+            ruta_huella = archivo.with_suffix(
+                ".sha256"
+            )
+
+            ruta_marcas = archivo.with_suffix(
+                ".boundaries.json"
+            )
+
             reutilizar_archivo = (
                 archivo.is_file()
                 and archivo.stat().st_size > 0
+                and ruta_huella.is_file()
+                and ruta_marcas.is_file()
             )
+
+            marcas_palabras: list[
+                dict[str, Any]
+            ] = []
+
+            if reutilizar_archivo:
+                try:
+                    reutilizar_archivo = (
+                        ruta_huella.read_text(
+                            encoding="utf-8"
+                        ).strip()
+                        == huella_audio
+                    )
+
+                    marcas_guardadas = json.loads(
+                        ruta_marcas.read_text(
+                            encoding="utf-8"
+                        )
+                    )
+
+                    if not isinstance(
+                        marcas_guardadas,
+                        list,
+                    ):
+                        reutilizar_archivo = False
+                    else:
+                        marcas_palabras = [
+                            marca
+                            for marca in marcas_guardadas
+                            if isinstance(
+                                marca,
+                                dict,
+                            )
+                        ]
+
+                    if not marcas_palabras:
+                        reutilizar_archivo = False
+
+                except (
+                    OSError,
+                    json.JSONDecodeError,
+                ):
+                    reutilizar_archivo = False
+                    marcas_palabras = []
 
             if reutilizar_archivo:
                 print(
@@ -807,22 +1035,39 @@ class GeneradorVoz:
                     f"{segmento['titulo']}"
                 )
 
-            texto_original = str(
-                segmento["texto"]
-            )
-
-            texto_voz_normalizado = (
-                normalizar_texto_voz(
-                    texto_original
-                )
-            )
-
-            if reutilizar_archivo:
-                marcas_palabras = []
-            else:
                 marcas_palabras = await self.generar_segmento(
                     texto=texto_voz_normalizado,
                     destino=archivo,
+                )
+
+                temporal_huella = ruta_huella.with_suffix(
+                    ".sha256.tmp"
+                )
+
+                temporal_marcas = ruta_marcas.with_suffix(
+                    ".json.tmp"
+                )
+
+                temporal_huella.write_text(
+                    huella_audio,
+                    encoding="utf-8",
+                )
+
+                temporal_marcas.write_text(
+                    json.dumps(
+                        marcas_palabras,
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+
+                temporal_huella.replace(
+                    ruta_huella
+                )
+
+                temporal_marcas.replace(
+                    ruta_marcas
                 )
 
             duracion = obtener_duracion_audio(
@@ -838,6 +1083,10 @@ class GeneradorVoz:
                     "archivo": archivo.name,
                     "duracion_real_segundos": duracion,
                     "marcas_palabras": marcas_palabras,
+                    "huella_audio": huella_audio,
+                    "perfil_voz": (
+                        PERFIL_VOZ_VERSION
+                    ),
                 }
             )
 
@@ -869,6 +1118,16 @@ class GeneradorVoz:
             "velocidad": self.velocidad,
             "tono": self.tono,
             "volumen": self.volumen,
+            "perfil_voz": (
+                PERFIL_VOZ_VERSION
+            ),
+            "masterizacion": {
+                "filtro": FILTRO_MASTER_VOZ,
+                "objetivo_lufs": -16.0,
+                "rango_lra": 7.0,
+                "pico_maximo_db": -1.5,
+                "bitrate": "192k",
+            },
             "cantidad_segmentos": len(resultados),
             "duracion_total_segundos": duracion_total,
             "audio_completo": audio_completo.name,
