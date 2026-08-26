@@ -2761,6 +2761,34 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
         check=True,
     )
 
+    respaldo_drive = (
+        project_root
+        / "tools"
+        / "google_drive_backup.py"
+    )
+
+    if not respaldo_drive.is_file():
+        raise FileNotFoundError(
+            "No existe el respaldo de Google Drive: "
+            f"{respaldo_drive}"
+        )
+
+    def respaldar_produccion_drive() -> None:
+        subprocess.run(
+            [
+                sys.executable,
+                str(respaldo_drive),
+            ],
+            cwd=project_root,
+            check=True,
+        )
+
+    print(
+        "Respaldando produccion final "
+        "en Google Drive..."
+    )
+    respaldar_produccion_drive()
+
     gestor_cola = (
         project_root
         / "tools"
@@ -2839,6 +2867,13 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
             check=True,
         )
         sincronizar_cola_pipeline()
+
+    if not argumentos.sin_publicar:
+        print(
+            "Sincronizando resultados de YouTube "
+            "en Google Drive..."
+        )
+        respaldar_produccion_drive()
 
     estado["completado"] = True
     estado["paso_actual"] = ""
