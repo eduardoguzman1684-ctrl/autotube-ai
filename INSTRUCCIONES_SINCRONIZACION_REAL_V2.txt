@@ -1,0 +1,89 @@
+﻿AUTOTUBE AI - SINCRONIZACION REAL POR PALABRA V2
+================================================
+
+OBJETIVO
+--------
+Usar una sola fuente temporal para narracion, frases semanticas, visuales,
+subtitulos y render. Los cambios visuales se asignan a palabras realmente
+pronunciadas por Edge TTS y se expresan en milisegundos.
+
+MEJORAS PRINCIPALES
+-------------------
+1. Convierte WordBoundary de Edge TTS en una pista global por palabra.
+2. Reconcilia pequenas diferencias producidas por concatenacion MP3.
+3. Conserva puntuacion y divide la narracion en frases de 3 a 10 segundos.
+4. Genera speech_alignment.json junto a la narracion.
+5. Incrusta la alineacion validada en el manifiesto de audio.
+6. Hace que el plan visual use los mismos limites semanticos.
+7. Hace que la timeline sustituya tiempos estimados por tiempos reales.
+8. Genera subtitulos con inicio y final de palabras reales.
+9. Obliga al render a consumir una timeline aprobada y compatible.
+10. Rechaza recursos, audio o timelines pertenecientes a otra produccion.
+11. Reconstruye la alineacion si el texto o el audio fueron modificados.
+12. Mantiene un respaldo proporcional explicito para audios antiguos.
+
+ARCHIVOS DE ESTA ACTUALIZACION
+------------------------------
+- pyproject.toml
+- src/autotube/main.py
+- src/autotube/audio/voice_generator.py
+- src/autotube/visuals/visual_planner.py
+- src/autotube/timeline/__init__.py
+- src/autotube/timeline/speech_alignment.py
+- src/autotube/timeline/semantic_timeline.py
+- src/autotube/video/subtitle_generator.py
+- src/autotube/video/composer.py
+- tests/test_speech_alignment_v2.py
+- INSTRUCCIONES_SINCRONIZACION_REAL_V2.txt
+
+CAMBIO DE SEGURIDAD DEL RENDER
+------------------------------
+El comando autotube render ahora necesita una timeline aprobada que coincida
+exactamente con el manifiesto visual y el manifiesto de audio. Si no existe,
+el sistema se detiene y solicita ejecutar primero:
+
+  autotube timeline
+
+Esto evita renderizar accidentalmente imÃ¡genes de una producciÃ³n con la voz
+de otra.
+
+ARCHIVOS NUEVOS DE PRODUCCION
+-----------------------------
+output/audio/narracion_<fecha>/speech_alignment.json
+output/timelines/timeline_<fecha>/timeline.json
+
+La timeline contiene:
+- pista de palabras con start_ms y end_ms;
+- pista de subtitulos;
+- eventos visuales por frase;
+- intervalo exacto de cada recurso;
+- fuente temporal y rango de palabras;
+- validacion de cobertura sin huecos ni solapamientos.
+
+PRUEBAS RECOMENDADAS DESPUES DE INSTALAR
+-----------------------------------------
+python -m unittest -v ^
+  tests.test_speech_alignment_v2 ^
+  tests.test_code_backup ^
+  tests.test_semantic_timeline ^
+  tests.test_visual_coherence ^
+  tests.test_voice_quality ^
+  tests.test_automation_guardian
+
+FLUJO DE UNA PRODUCCION NUEVA
+-----------------------------
+GUION
+  -> VOZ Y WORD BOUNDARY
+  -> ALINEACION GLOBAL
+  -> PLAN VISUAL POR FRASE
+  -> RECURSOS VERIFICADOS
+  -> TIMELINE APROBADA
+  -> RENDER GUIADO POR TIMELINE
+  -> SUBTITULOS POR PALABRA
+  -> VIDEO FINAL
+
+VERSION DEL SOFTWARE
+--------------------
+AutoTube AI 0.3.0
+speech_alignment_v2
+semantic_timeline_v2

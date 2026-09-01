@@ -23,6 +23,7 @@ from autotube.visuals.local_asset_generator import (
 from autotube.video.composer import (
     CompositorVideo,
     cargar_contexto_render,
+    cargar_timeline_render,
 )
 from autotube.video.subtitle_generator import (
     GeneradorSubtitulos,
@@ -352,6 +353,12 @@ def crear_parser() -> argparse.ArgumentParser:
         "--audio",
         default=None,
         help="Manifiesto de audio. Usa el más reciente por defecto.",
+    )
+
+    render_parser.add_argument(
+        "--timeline",
+        default=None,
+        help="Timeline aprobada. Busca la compatible si se omite.",
     )
 
     render_parser.add_argument(
@@ -1398,6 +1405,10 @@ def generar_voz(argumentos: argparse.Namespace) -> None:
         f"Manifiesto: "
         f"{resultado['manifiesto']}"
     )
+    print(
+        f"Alineacion por palabra: "
+        f"{resultado['alineacion']}"
+    )
     print("=" * 72)
 
 
@@ -1803,6 +1814,9 @@ def generar_timeline_semantica(
     )
 
     print(f"Eventos sincronizados: {result['events']}")
+    print(f"Palabras alineadas: {result['words']}")
+    print(f"Fuente temporal: {result['timing_source']}")
+    print(f"Version: {result['version']}")
     print(
         "Duracion cubierta: "
         f"{result['duration_ms'] / 1000:.3f} segundos"
@@ -1825,6 +1839,12 @@ def renderizar_video(argumentos: argparse.Namespace) -> None:
     archivo_audio = (
         Path(argumentos.audio)
         if argumentos.audio
+        else None
+    )
+
+    archivo_timeline = (
+        Path(argumentos.timeline)
+        if argumentos.timeline
         else None
     )
 
@@ -1866,6 +1886,13 @@ def renderizar_video(argumentos: argparse.Namespace) -> None:
         archivo_audio=archivo_audio,
     )
 
+    timeline, ruta_timeline = cargar_timeline_render(
+        output_dir=settings.output_dir,
+        ruta_assets=ruta_assets,
+        ruta_audio_manifest=ruta_audio_manifest,
+        archivo=archivo_timeline,
+    )
+
     cantidad_total = len(
         assets.get("elementos", [])
     )
@@ -1874,6 +1901,7 @@ def renderizar_video(argumentos: argparse.Namespace) -> None:
     print("=" * 72)
     print(f"Recursos: {ruta_assets}")
     print(f"Audio: {ruta_audio}")
+    print(f"Timeline aprobada: {ruta_timeline}")
     print(f"Recursos disponibles: {cantidad_total}/{cantidad_total}")
     print(
         f"Modo: "
@@ -1891,6 +1919,8 @@ def renderizar_video(argumentos: argparse.Namespace) -> None:
         ruta_assets=ruta_assets,
         ruta_audio_manifest=ruta_audio_manifest,
         ruta_audio=ruta_audio,
+        timeline=timeline,
+        ruta_timeline=ruta_timeline,
         preview=argumentos.preview,
         limite_clips=argumentos.limite_clips,
         conservar_temporales=argumentos.conservar_temporales,

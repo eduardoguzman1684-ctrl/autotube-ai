@@ -9,6 +9,10 @@ from typing import Any
 
 from autotube.ai.gemini_client import GeminiClient
 from autotube.content.script_validator import localizar_guion
+from autotube.timeline.speech_alignment import (
+    SpeechAlignmentError,
+    build_speech_alignment,
+)
 
 
 PLAN_VISUAL_SCHEMA: dict[str, Any] = {
@@ -347,6 +351,73 @@ def crear_bloques_narracion(
         or segmento.get("texto")
         or ""
     ).strip()
+
+    try:
+        alignment = build_speech_alignment(
+            {
+                "duracion_total_segundos": duracion,
+                "segmentos": [segmento],
+            },
+            target_seconds=objetivo_segundos,
+            minimum_seconds=minimo_segundos,
+            maximum_seconds=maximo_segundos,
+        )
+        global_offset_ms = round(
+            inicio_global * 1000
+        )
+        return [
+            {
+                "orden": index,
+                "inicio_relativo": round(
+                    int(phrase["start_ms"]) / 1000,
+                    3,
+                ),
+                "final_relativo": round(
+                    int(phrase["end_ms"]) / 1000,
+                    3,
+                ),
+                "inicio_segundos": round(
+                    (
+                        global_offset_ms
+                        + int(phrase["start_ms"])
+                    )
+                    / 1000,
+                    3,
+                ),
+                "final_segundos": round(
+                    (
+                        global_offset_ms
+                        + int(phrase["end_ms"])
+                    )
+                    / 1000,
+                    3,
+                ),
+                "duracion_segundos": round(
+                    int(phrase["duration_ms"])
+                    / 1000,
+                    3,
+                ),
+                "texto_narrado": str(
+                    phrase["text"]
+                ),
+                "sincronizacion": str(
+                    phrase["timing_source"]
+                ),
+                "palabra_inicial": int(
+                    phrase["global_word_start"]
+                ),
+                "palabra_final": int(
+                    phrase["global_word_end"]
+                ),
+            }
+            for index, phrase in enumerate(
+                alignment["phrases"],
+                start=1,
+            )
+        ]
+    except SpeechAlignmentError:
+        # Compatibilidad con manifiestos antiguos o incompletos.
+        pass
 
     marcas_raw = segmento.get(
         "marcas_palabras",

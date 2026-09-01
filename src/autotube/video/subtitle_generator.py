@@ -6,6 +6,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from autotube.timeline.speech_alignment import (
+    create_subtitle_cues,
+    get_speech_alignment,
+)
+
 
 def localizar_manifiesto_audio_subtitulos(
     output_dir: Path,
@@ -219,6 +224,58 @@ class GeneradorSubtitulos:
             "segmentos",
             [],
         )
+
+        alignment = get_speech_alignment(
+            manifiesto_audio
+        )
+        cues = create_subtitle_cues(
+            alignment,
+            max_words=max_palabras,
+            max_characters=max_caracteres,
+        )
+        segment_titles = {
+            index: str(
+                segment.get(
+                    "titulo",
+                    f"Segmento {index}",
+                )
+            )
+            for index, segment in enumerate(
+                segmentos,
+                start=1,
+            )
+            if isinstance(segment, dict)
+        }
+        if cues:
+            return [
+                {
+                    "inicio_segundos": round(
+                        int(cue["start_ms"])
+                        / 1000,
+                        3,
+                    ),
+                    "final_segundos": round(
+                        int(cue["end_ms"])
+                        / 1000,
+                        3,
+                    ),
+                    "texto": str(cue["text"]),
+                    "segmento": segment_titles.get(
+                        int(cue["segment_index"]),
+                        "",
+                    ),
+                    "sincronizacion": str(
+                        cue["timing_source"]
+                    ),
+                    "palabra_inicial": int(
+                        cue["word_start"]
+                    ),
+                    "palabra_final": int(
+                        cue["word_end"]
+                    ),
+                }
+                for cue in cues
+            ]
 
         eventos: list[dict[str, Any]] = []
         tiempo_acumulado = 0.0
@@ -620,6 +677,20 @@ class GeneradorSubtitulos:
                 ruta_audio_manifest.resolve()
             ),
             "cantidad_subtitulos": len(eventos),
+            "sincronizacion": (
+                "speech_alignment_v2"
+            ),
+            "fuentes_temporales": sorted(
+                {
+                    str(
+                        evento.get(
+                            "sincronizacion",
+                            "desconocida",
+                        )
+                    )
+                    for evento in eventos
+                }
+            ),
             "duracion_segundos": round(
                 duracion_final,
                 3,
@@ -632,6 +703,7 @@ class GeneradorSubtitulos:
             "transcripcion": str(
                 ruta_transcripcion.resolve()
             ),
+            "eventos": eventos,
         }
 
         ruta_manifiesto = (

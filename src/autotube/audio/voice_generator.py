@@ -15,6 +15,9 @@ from typing import Any
 import edge_tts
 
 from autotube.content.script_validator import localizar_guion
+from autotube.timeline.speech_alignment import (
+    build_speech_alignment,
+)
 
 
 VOZ_PREDETERMINADA = "es-MX-JorgeNeural"
@@ -1134,6 +1137,35 @@ class GeneradorVoz:
             "segmentos": resultados,
         }
 
+        alineacion_global = build_speech_alignment(
+            manifiesto
+        )
+        ruta_alineacion = (
+            carpeta / "speech_alignment.json"
+        )
+        ruta_alineacion.write_text(
+            json.dumps(
+                alineacion_global,
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        manifiesto["sincronizacion"] = {
+            "version": alineacion_global["version"],
+            "fuente_temporal": alineacion_global[
+                "quality"
+            ]["timing_source"],
+            "palabras": alineacion_global["word_count"],
+            "frases_semanticas": alineacion_global[
+                "phrase_count"
+            ],
+            "archivo_alineacion": ruta_alineacion.name,
+        }
+        manifiesto["alineacion_global"] = (
+            alineacion_global
+        )
+
         ruta_manifiesto = (
             carpeta / "manifest.json"
         )
@@ -1151,6 +1183,7 @@ class GeneradorVoz:
             "carpeta": carpeta,
             "audio_completo": audio_completo,
             "manifiesto": ruta_manifiesto,
+            "alineacion": ruta_alineacion,
             "duracion_total_segundos": duracion_total,
             "segmentos": resultados,
         }

@@ -5,8 +5,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from autotube.timeline.speech_alignment import (
+    SpeechAlignmentError,
+    create_subtitle_cues,
+    get_speech_alignment,
+)
 
-TIMELINE_VERSION = "semantic_timeline_v1"
+
+TIMELINE_VERSION = "semantic_timeline_v2"
 READY_ASSET_STATES = {"descargado", "generado_local"}
 
 
@@ -187,11 +193,55 @@ class GeneradorTimelineSemantica:
         )
         total_ms = accumulated_ms
 
-        if abs(declared_total_ms - total_ms) > self.tolerance_ms:
+        total_tolerance_ms = max(
+            self.tolerance_ms,
+            len(audio_segments) * 120,
+        )
+        if abs(declared_total_ms - total_ms) > total_tolerance_ms:
             raise TimelineValidationError(
                 "La suma de segmentos no coincide con la duracion total "
                 f"del audio: {total_ms} ms frente a {declared_total_ms} ms."
             )
+
+        try:
+            alignment = get_speech_alignment(
+                audio_manifest
+            )
+        except SpeechAlignmentError:
+            alignment = {
+                "version": "legacy_without_word_marks",
+                "duration_ms": total_ms,
+                "word_count": 0,
+                "phrase_count": 0,
+                "quality": {
+                    "timing_source": "legacy_asset_timing",
+                    "real_boundary_segments": 0,
+                    "fallback_segments": len(audio_segments),
+                },
+                "segments": [],
+                "words": [],
+                "phrases": [],
+            }
+        total_ms = int(
+            alignment.get(
+                "duration_ms",
+                total_ms,
+            )
+        )
+        aligned_segments = {
+            int(segment["segment_index"]): segment
+            for segment in alignment.get("segments", [])
+            if isinstance(segment, dict)
+            and "segment_index" in segment
+        }
+        if aligned_segments:
+            segment_windows = {
+                index: (
+                    int(segment["start_ms"]),
+                    int(segment["end_ms"]),
+                )
+                for index, segment in aligned_segments.items()
+            }
 
         raw_assets = assets_manifest.get("elementos", [])
         if not isinstance(raw_assets, list) or not raw_assets:
@@ -206,6 +256,17 @@ class GeneradorTimelineSemantica:
                 _int(item.get("clip_orden", 0), "clip_orden"),
             ),
         )
+
+        asset_count_by_segment: dict[int, int] = {}
+        for asset in ordered_assets:
+            segment_index = _int(
+                asset.get("segmento_indice", 0),
+                "segmento_indice",
+            )
+            asset_count_by_segment[segment_index] = (
+                asset_count_by_segment.get(segment_index, 0)
+                + 1
+            )
 
         events: list[dict[str, Any]] = []
 
@@ -242,6 +303,38 @@ class GeneradorTimelineSemantica:
                 _float(asset.get("final_segundos", 0), "final_segundos")
             )
 
+            aligned_phrase: dict[str, Any] | None = None
+            aligned_segment = aligned_segments.get(
+                segment_index
+            )
+            if isinstance(aligned_segment, dict):
+                phrases = aligned_segment.get(
+                    "phrases",
+                    [],
+                )
+                if (
+                    isinstance(phrases, list)
+                    and len(phrases)
+                    == asset_count_by_segment.get(
+                        segment_index,
+                        0,
+                    )
+                    and 1 <= clip_order <= len(phrases)
+                    and isinstance(
+                        phrases[clip_order - 1],
+                        dict,
+                    )
+                ):
+                    aligned_phrase = phrases[
+                        clip_order - 1
+                    ]
+                    start_ms = int(
+                        aligned_phrase["start_ms"]
+                    )
+                    end_ms = int(
+                        aligned_phrase["end_ms"]
+                    )
+
             if end_ms <= start_ms:
                 raise TimelineValidationError(
                     f"Intervalo invalido en el elemento {position}: "
@@ -259,6 +352,13 @@ class GeneradorTimelineSemantica:
                 )
 
             speech_text = str(asset.get("texto_narrado", "")).strip()
+            if aligned_phrase is not None:
+                speech_text = str(
+                    aligned_phrase.get(
+                        "text",
+                        speech_text,
+                    )
+                ).strip()
             if not speech_text:
                 raise TimelineValidationError(
                     f"El elemento {position} no conserva el texto narrado."
@@ -275,6 +375,42 @@ class GeneradorTimelineSemantica:
                     "duration_ms": end_ms - start_ms,
                     "speech_text": speech_text,
                     "subtitle_text": speech_text,
+                    "alignment": {
+                        "source": (
+                            str(
+                                aligned_phrase.get(
+                                    "timing_source",
+                                    "speech_alignment_v2",
+                                )
+                            )
+                            if aligned_phrase is not None
+                            else "legacy_asset_timing"
+                        ),
+                        "phrase_id": (
+                            str(
+                                aligned_phrase.get(
+                                    "id",
+                                    "",
+                                )
+                            )
+                            if aligned_phrase is not None
+                            else ""
+                        ),
+                        "word_start": (
+                            aligned_phrase.get(
+                                "global_word_start"
+                            )
+                            if aligned_phrase is not None
+                            else None
+                        ),
+                        "word_end": (
+                            aligned_phrase.get(
+                                "global_word_end"
+                            )
+                            if aligned_phrase is not None
+                            else None
+                        ),
+                    },
                     "visual": {
                         "asset_type": str(asset.get("tipo_recurso", "")),
                         "asset_path": str(asset_file.resolve()),
@@ -324,6 +460,18 @@ class GeneradorTimelineSemantica:
                 "tolerance_ms": self.tolerance_ms,
                 "events": len(events),
                 "coverage_ms": total_ms,
+                "word_timing_source": alignment[
+                    "quality"
+                ]["timing_source"],
+                "aligned_words": alignment[
+                    "word_count"
+                ],
+            },
+            "tracks": {
+                "words": alignment["words"],
+                "subtitles": create_subtitle_cues(
+                    alignment
+                ),
             },
             "events": events,
         }
@@ -391,4 +539,11 @@ class GeneradorTimelineSemantica:
             "path": path,
             "events": len(timeline["events"]),
             "duration_ms": timeline["duration_ms"],
+            "words": timeline["validation"][
+                "aligned_words"
+            ],
+            "timing_source": timeline["validation"][
+                "word_timing_source"
+            ],
+            "version": timeline["version"],
         }

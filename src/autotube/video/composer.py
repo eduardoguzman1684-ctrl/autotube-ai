@@ -117,6 +117,80 @@ def localizar_manifiesto_audio(
     return archivos[0]
 
 
+def cargar_timeline_render(
+    output_dir: Path,
+    ruta_assets: Path,
+    ruta_audio_manifest: Path,
+    archivo: Path | None = None,
+) -> tuple[dict[str, Any], Path]:
+    """Carga la timeline aprobada que pertenece a los manifiestos indicados."""
+    if archivo is not None:
+        candidates = [
+            archivo.expanduser().resolve()
+        ]
+    else:
+        candidates = sorted(
+            (output_dir / "timelines").glob(
+                "timeline_*/timeline.json"
+            ),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+
+    expected_assets = ruta_assets.resolve()
+    expected_audio = ruta_audio_manifest.resolve()
+
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            timeline = json.loads(
+                path.read_text(
+                    encoding="utf-8-sig"
+                )
+            )
+        except (
+            OSError,
+            json.JSONDecodeError,
+        ):
+            continue
+
+        if not isinstance(timeline, dict):
+            continue
+        sources = timeline.get("sources", {})
+        validation = timeline.get("validation", {})
+        if not isinstance(sources, dict) or not isinstance(validation, dict):
+            continue
+
+        try:
+            same_assets = (
+                Path(
+                    str(sources.get("assets_manifest", ""))
+                ).resolve()
+                == expected_assets
+            )
+            same_audio = (
+                Path(
+                    str(sources.get("audio_manifest", ""))
+                ).resolve()
+                == expected_audio
+            )
+        except OSError:
+            continue
+
+        if (
+            same_assets
+            and same_audio
+            and validation.get("status") == "approved"
+        ):
+            return timeline, path.resolve()
+
+    raise FileNotFoundError(
+        "No existe una timeline aprobada para estos recursos y audio. "
+        "Ejecuta primero: autotube timeline"
+    )
+
+
 def cargar_contexto_render(
     output_dir: Path,
     archivo_assets: Path | None = None,
@@ -405,6 +479,91 @@ def sincronizar_duraciones_con_audio(
             )
 
     return copias
+
+
+def sincronizar_duraciones_con_timeline(
+    elementos: list[dict[str, Any]],
+    timeline: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Aplica al render los intervalos exactos aprobados por la timeline."""
+    events = timeline.get("events", [])
+    if not isinstance(events, list) or not events:
+        raise RuntimeError(
+            "La timeline aprobada no contiene eventos visuales."
+        )
+
+    event_map: dict[tuple[int, int], dict[str, Any]] = {}
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        key = (
+            entero_seguro(event.get("segment_index")),
+            entero_seguro(event.get("clip_order")),
+        )
+        if key in event_map:
+            raise RuntimeError(
+                f"La timeline contiene un evento duplicado: {key}."
+            )
+        event_map[key] = event
+
+    synchronized: list[dict[str, Any]] = []
+    for element in elementos:
+        copy = dict(element)
+        key = (
+            entero_seguro(copy.get("segmento_indice")),
+            entero_seguro(copy.get("clip_orden")),
+        )
+        event = event_map.get(key)
+        if event is None:
+            raise RuntimeError(
+                "La timeline no contiene el recurso visual "
+                f"segmento={key[0]}, clip={key[1]}."
+            )
+
+        start_ms = entero_seguro(event.get("start_ms"))
+        end_ms = entero_seguro(event.get("end_ms"))
+        if end_ms <= start_ms:
+            raise RuntimeError(
+                f"La timeline contiene un intervalo invalido: {key}."
+            )
+
+        copy["inicio_segundos"] = round(start_ms / 1000, 3)
+        copy["final_segundos"] = round(end_ms / 1000, 3)
+        copy["duracion_objetivo_segundos"] = round(
+            (end_ms - start_ms) / 1000,
+            3,
+        )
+        copy["texto_narrado"] = str(
+            event.get(
+                "speech_text",
+                copy.get("texto_narrado", ""),
+            )
+        )
+        copy["timeline_event_id"] = str(event.get("id", ""))
+        copy["sincronizacion_render"] = "semantic_timeline_v2"
+        synchronized.append(copy)
+
+    if len(synchronized) != len(events):
+        raise RuntimeError(
+            "La cantidad de recursos no coincide con la timeline aprobada: "
+            f"{len(synchronized)}/{len(events)}."
+        )
+
+    visual_ms = sum(
+        round(
+            flotante_seguro(item["duracion_objetivo_segundos"])
+            * 1000
+        )
+        for item in synchronized
+    )
+    timeline_ms = entero_seguro(timeline.get("duration_ms"))
+    if abs(visual_ms - timeline_ms) > 2:
+        raise RuntimeError(
+            "La duracion visual no coincide con la timeline: "
+            f"{visual_ms} ms frente a {timeline_ms} ms."
+        )
+
+    return synchronized
 
 
 class CompositorVideo:
@@ -852,6 +1011,8 @@ class CompositorVideo:
         ruta_assets: Path,
         ruta_audio_manifest: Path,
         ruta_audio: Path,
+        timeline: dict[str, Any] | None = None,
+        ruta_timeline: Path | None = None,
         preview: bool = False,
         limite_clips: int | None = None,
         conservar_temporales: bool = False,
@@ -861,10 +1022,16 @@ class CompositorVideo:
             assets["elementos"]
         )
 
-        elementos = sincronizar_duraciones_con_audio(
-            elementos=elementos,
-            audio_manifest=audio_manifest,
-        )
+        if timeline is not None:
+            elementos = sincronizar_duraciones_con_timeline(
+                elementos=elementos,
+                timeline=timeline,
+            )
+        else:
+            elementos = sincronizar_duraciones_con_audio(
+                elementos=elementos,
+                audio_manifest=audio_manifest,
+            )
 
         if preview:
             limite_efectivo = (
@@ -1074,6 +1241,16 @@ class CompositorVideo:
             ),
             "manifiesto_audio": str(
                 ruta_audio_manifest.resolve()
+            ),
+            "timeline": (
+                str(ruta_timeline.resolve())
+                if ruta_timeline is not None
+                else ""
+            ),
+            "sincronizacion_render": (
+                "semantic_timeline_v2"
+                if timeline is not None
+                else "legacy_audio_scaling"
             ),
             "conservar_temporales": conservar_temporales,
         }
