@@ -644,6 +644,7 @@ class CompositorVideo:
         ancho: int,
         alto: int,
         fps: int,
+        duracion: float,
         movimiento: str,
         identificador: str = "",
     ) -> str:
@@ -686,7 +687,9 @@ class CompositorVideo:
         )
         direccion_inversa = bool(firma % 2)
 
-        zoom_expression = "min(zoom+0.00038,1.070)"
+        total_frames = max(2, round(max(0.1, duracion) * fps))
+        progress = f"min(on/{total_frames - 1},1)"
+        zoom_expression = f"1+0.070*{progress}"
         x_expression = "iw/2-(iw/zoom/2)"
         y_expression = "ih/2-(ih/zoom/2)"
 
@@ -695,11 +698,11 @@ class CompositorVideo:
 
             if direccion_inversa:
                 x_expression = (
-                    "max(0,iw-iw/zoom-on*0.35)"
+                    f"(iw-iw/zoom)*(1-{progress})"
                 )
             else:
                 x_expression = (
-                    "min(iw-iw/zoom,on*0.35)"
+                    f"(iw-iw/zoom)*{progress}"
                 )
 
         elif "desplazamiento vertical" in movimiento_normalizado:
@@ -707,18 +710,18 @@ class CompositorVideo:
 
             if direccion_inversa:
                 y_expression = (
-                    "max(0,ih-ih/zoom-on*0.20)"
+                    f"(ih-ih/zoom)*(1-{progress})"
                 )
             else:
                 y_expression = (
-                    "min(ih-ih/zoom,on*0.20)"
+                    f"(ih-ih/zoom)*{progress}"
                 )
 
         elif "acercamiento" in movimiento_normalizado:
-            zoom_expression = "min(zoom+0.00060,1.100)"
+            zoom_expression = f"1+0.100*{progress}"
 
         elif "zoom lento" in movimiento_normalizado:
-            zoom_expression = "min(zoom+0.00038,1.070)"
+            zoom_expression = f"1+0.070*{progress}"
 
         return (
             f"scale={ancho_preparacion}:{alto_preparacion}:"
@@ -768,6 +771,7 @@ class CompositorVideo:
                 ancho=ancho,
                 alto=alto,
                 fps=fps,
+                duracion=duracion,
                 movimiento=movimiento,
                 identificador=str(
                     elemento.get("clip_id")

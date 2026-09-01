@@ -1,0 +1,53 @@
+AUTOTUBE AI - AUDITORIA VISUAL FINAL V2.2
+=========================================
+
+OBJETIVO
+--------
+Impedir que el render utilice recursos genericos, duplicados o diferentes de
+la narracion y evitar que el movimiento de imagenes termine antes del clip.
+
+PROBLEMAS CORREGIDOS
+--------------------
+1. La cobertura de continuidad copiaba un visual del mismo segmento sin
+   volver a validarlo contra el requisito exacto del nuevo clip.
+2. El movimiento Ken Burns alcanzaba su limite antes de finalizar clips
+   largos, dejando varios segundos congelados.
+3. El render confiaba en metadata previa sin exigir una auditoria ligada a
+   los bytes exactos del archivo final.
+
+NUEVAS PROTECCIONES
+-------------------
+- Comando: autotube visual-audit
+- Las imagenes se inspeccionan por sus pixeles reales.
+- Los videos se inspeccionan mediante fotogramas del 15 %, 50 % y 85 %.
+- Gemini evalua el concepto, criterios obligatorios y prohibiciones.
+- Los recursos consecutivos duplicados o casi identicos son rechazados.
+- Cada aprobacion queda ligada al SHA-256 del archivo real.
+- Si cambia un archivo despues de la auditoria, el render vuelve a bloquearse.
+- Preview y render completo requieren auditoria compatible y aprobada.
+- El pipeline automatico audita antes de crear la timeline y renderizar.
+- La continuidad solo reutiliza un recurso si vuelve a superar una
+  verificacion visual estricta para el clip de destino.
+- El zoom y el paneo progresan durante el 100 % de la duracion del clip.
+
+ARCHIVOS
+--------
+pyproject.toml
+src\autotube\main.py
+src\autotube\video\composer.py
+src\autotube\visuals\asset_collector.py
+src\autotube\visuals\final_visual_auditor.py
+tests\test_final_visual_audit_v2_2.py
+
+VERSION
+-------
+AutoTube AI: 0.3.2
+Tag recomendado: auditoria-visual-final-v2.2
+
+PRUEBA INICIAL RECOMENDADA
+--------------------------
+autotube visual-audit --canal nexon_ia --assets RUTA_MANIFIESTO --limite 8
+
+La coleccion actual debe ser rechazada porque el preview demostro recursos
+duplicados y semanticamente incorrectos. Ese rechazo es el comportamiento
+seguro esperado. No renderizar hasta reemplazar y aprobar los ocho recursos.

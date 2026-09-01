@@ -719,6 +719,51 @@ class RecolectorRecursos:
                 continue
 
             origen = Path(str(candidato["archivo"]))
+            requisito = self._requisito_visual(elemento)
+            lamina = (
+                self.data_dir
+                / "cache"
+                / "verificacion_visual"
+                / (
+                    f"continuidad_s{segmento:02d}_"
+                    f"c{orden:03d}.jpg"
+                )
+            )
+            try:
+                verificacion = self.verificador_visual.seleccionar(
+                    imagenes=[origen],
+                    requisito_visual=requisito,
+                    lamina_temporal=lamina,
+                )
+            except Exception as error_remoto:
+                try:
+                    verificacion = self.verificador_visual_local.seleccionar(
+                        imagenes=[origen],
+                        requisito_visual=requisito,
+                    )
+                except Exception as error_local:
+                    print(
+                        "  COBERTURA RECHAZADA: no fue posible verificar "
+                        f"segmento {segmento}, clip {orden}: "
+                        f"{error_remoto}; {error_local}"
+                    )
+                    continue
+
+            if (
+                not bool(verificacion.get("aprobada", False))
+                or int(verificacion.get("seleccion", 0)) != 1
+                or int(verificacion.get("puntaje", 0)) < 94
+                or not bool(verificacion.get("cumple_concepto", False))
+                or not bool(verificacion.get("cumple_obligatorios", False))
+                or bool(verificacion.get("viola_prohibidos", True))
+            ):
+                print(
+                    "  COBERTURA RECHAZADA POR PIXELES: "
+                    f"segmento {segmento}, clip {orden}; "
+                    f"{verificacion.get('motivo', 'sin coincidencia directa')}"
+                )
+                continue
+
             carpeta = origen.parent
             destino = carpeta / (
                 f"clip_{orden:02d}_continuidad_segmento{origen.suffix.lower()}"
@@ -734,9 +779,10 @@ class RecolectorRecursos:
                 "archivo_original": str(origen.resolve()),
                 "fuente_original": str(candidato.get("fuente", "")),
                 "segmento": segmento,
+                "verificacion_visual": verificacion,
                 "regla": (
-                    "Recurso previamente aprobado del mismo segmento; "
-                    "se aplica un movimiento cinematografico diferente."
+                    "Recurso del mismo segmento aprobado nuevamente contra "
+                    "el contrato visual exacto del clip y sus pixeles reales."
                 ),
             }
             elemento.pop("motivo", None)

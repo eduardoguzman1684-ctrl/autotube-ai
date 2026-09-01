@@ -20,6 +20,10 @@ from autotube.visuals.local_asset_generator import (
     GeneradorRecursosLocales,
     cargar_manifiesto_assets,
 )
+from autotube.visuals.final_visual_auditor import (
+    AuditorVisualFinal,
+    find_compatible_audit,
+)
 from autotube.video.composer import (
     CompositorVideo,
     cargar_contexto_render,
@@ -338,6 +342,28 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Canal propietario de la produccion.",
     )
 
+    visual_audit_parser = subcomandos.add_parser(
+        "visual-audit",
+        help="Audita los pixeles y fotogramas reales antes del render.",
+    )
+    visual_audit_parser.add_argument(
+        "--assets",
+        default=None,
+        help="Manifiesto visual. Usa el mas reciente por defecto.",
+    )
+    visual_audit_parser.add_argument(
+        "--limite",
+        type=int,
+        default=0,
+        help="Cantidad de recursos a auditar; 0 audita la coleccion completa.",
+    )
+    visual_audit_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Canal propietario de la produccion.",
+    )
+
     render_parser = subcomandos.add_parser(
         "render",
         help="Combina los recursos visuales con la narración.",
@@ -359,6 +385,12 @@ def crear_parser() -> argparse.ArgumentParser:
         "--timeline",
         default=None,
         help="Timeline aprobada. Busca la compatible si se omite.",
+    )
+
+    render_parser.add_argument(
+        "--visual-audit",
+        default=None,
+        help="Auditoria visual aprobada. Busca la compatible si se omite.",
     )
 
     render_parser.add_argument(
@@ -1826,6 +1858,43 @@ def generar_timeline_semantica(
     print("=" * 72)
 
 
+def auditar_visuales_finales(argumentos: argparse.Namespace) -> None:
+    """Comprueba los pixeles y fotogramas de los recursos reales."""
+    settings = load_settings()
+    candidates = sorted(
+        settings.output_dir.glob("assets/coleccion_*/assets_manifest.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if argumentos.assets:
+        assets_path = Path(argumentos.assets).expanduser().resolve()
+    elif candidates:
+        assets_path = candidates[0].resolve()
+    else:
+        raise FileNotFoundError("No existe un manifiesto visual para auditar.")
+
+    result = AuditorVisualFinal(settings.output_dir).audit(
+        assets_path=assets_path,
+        channel_slug=getattr(argumentos, "canal", DEFAULT_CHANNEL),
+        limit=max(0, int(argumentos.limite)),
+    )
+
+    print("\nAUDITORIA VISUAL FINAL")
+    print("=" * 72)
+    print(f"Recursos auditados: {result['audited_assets']}")
+    print(f"Recursos aprobados: {result['approved_assets']}")
+    print(f"Recursos rechazados: {result['rejected_assets']}")
+    print(f"Informe: {result['path']}")
+    print(f"Estado: {str(result['status']).upper()}")
+    print("=" * 72)
+
+    if result["status"] != "approved":
+        raise RuntimeError(
+            "La auditoria visual rechazo uno o mas recursos. "
+            "El render permanece bloqueado."
+        )
+
+
 def renderizar_video(argumentos: argparse.Namespace) -> None:
     """Renderiza una vista previa o el video completo."""
     settings = load_settings()
@@ -1845,6 +1914,12 @@ def renderizar_video(argumentos: argparse.Namespace) -> None:
     archivo_timeline = (
         Path(argumentos.timeline)
         if argumentos.timeline
+        else None
+    )
+
+    archivo_auditoria = (
+        Path(argumentos.visual_audit)
+        if argumentos.visual_audit
         else None
     )
 
@@ -1886,6 +1961,18 @@ def renderizar_video(argumentos: argparse.Namespace) -> None:
         archivo_audio=archivo_audio,
     )
 
+    cantidad_requerida_auditoria = (
+        int(argumentos.limite_clips)
+        if argumentos.limite_clips is not None
+        else (8 if argumentos.preview else len(assets.get("elementos", [])))
+    )
+    _, ruta_auditoria = find_compatible_audit(
+        output_dir=settings.output_dir,
+        assets_path=ruta_assets,
+        required_assets=cantidad_requerida_auditoria,
+        audit_path=archivo_auditoria,
+    )
+
     timeline, ruta_timeline = cargar_timeline_render(
         output_dir=settings.output_dir,
         ruta_assets=ruta_assets,
@@ -1902,6 +1989,7 @@ def renderizar_video(argumentos: argparse.Namespace) -> None:
     print(f"Recursos: {ruta_assets}")
     print(f"Audio: {ruta_audio}")
     print(f"Timeline aprobada: {ruta_timeline}")
+    print(f"Auditoria visual aprobada: {ruta_auditoria}")
     print(f"Recursos disponibles: {cantidad_total}/{cantidad_total}")
     print(
         f"Modo: "
@@ -3250,6 +3338,16 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
                 ],
             ),
             (
+                "Auditoria visual final",
+                [
+                    "visual-audit",
+                    "--limite",
+                    "0",
+                    "--canal",
+                    canal_slug,
+                ],
+            ),
+            (
                 "Generacion de timeline semantica",
                 [
                     "timeline",
@@ -3758,6 +3856,10 @@ def main() -> None:
 
         if argumentos.comando == "timeline":
             generar_timeline_semantica(argumentos)
+            return
+
+        if argumentos.comando == "visual-audit":
+            auditar_visuales_finales(argumentos)
             return
 
         if argumentos.comando == "visual-cache":
