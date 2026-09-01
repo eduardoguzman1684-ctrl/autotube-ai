@@ -66,6 +66,56 @@ class _AlwaysApprovedAuditor:
         return report
 
 
+class _RejectIsolatedFalsePositiveAuditor(_AlwaysApprovedAuditor):
+    """Simula un stock moderno aprobado aislado y rechazado en contexto."""
+
+    def audit(self, assets_path, channel_slug, limit=0):
+        self.calls += 1
+        path = Path(assets_path)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        elements = list(data["elementos"])
+        if limit > 0:
+            elements = elements[:limit]
+        candidate_call = path.name == "auditable_candidates.json"
+        results = []
+        for item in elements:
+            asset_path = Path(item["archivo"])
+            approved = candidate_call or item.get("tipo_recurso") == "texto_animado"
+            results.append(
+                {
+                    "id": (
+                        f"s{int(item['segmento_indice']):02d}_"
+                        f"c{int(item['clip_orden']):03d}"
+                    ),
+                    "approved": approved,
+                    "score": 100 if approved else 40,
+                    "reason": (
+                        "Candidato aislado aprobado."
+                        if approved
+                        else "Stock moderno rechazado dentro de la coleccion."
+                    ),
+                    "description_seen": str(item.get("descripcion", "")),
+                    "asset_sha256": _sha256(asset_path),
+                }
+            )
+        report_path = self.output / f"context_audit_{self.calls}.json"
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report = {
+            "channel_slug": channel_slug,
+            "assets_fingerprint": _assets_fingerprint(path),
+            "audited_assets": len(results),
+            "status": (
+                "approved"
+                if results and all(item["approved"] for item in results)
+                else "rejected"
+            ),
+            "elements": results,
+            "path": str(report_path),
+        }
+        report_path.write_text(json.dumps(report), encoding="utf-8")
+        return report
+
+
 class EditorialFallbackV25Test(unittest.TestCase):
     def test_round_two_rotates_to_second_historical_query(self) -> None:
         clip = {
@@ -234,6 +284,104 @@ class EditorialFallbackV25Test(unittest.TestCase):
             self.assertEqual(repaired["tipo_recurso"], "texto_animado")
             self.assertIn("Tarjeta documental", repaired["descripcion"])
             self.assertIn("fallback_editorial", repaired)
+
+    def test_full_audit_requeues_false_positive_for_next_round(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            original = root / "wrong.png"
+            _image(original, (30, 30, 30))
+            element = {
+                "segmento_indice": 2,
+                "segmento_numero": 2,
+                "segmento_titulo": "Fundadores",
+                "clip_orden": 4,
+                "tipo_recurso": "imagen_stock",
+                "archivo": str(original),
+                "estado": "descargado",
+                "descripcion": "Fotografia real de John McCarthy en una pizarra.",
+                "texto_narrado": "John McCarthy organizo el taller.",
+                "criterios_obligatorios": [],
+                "elementos_prohibidos": [],
+                "consultas_alternativas": [],
+            }
+            manifest_path = root / "assets_manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "channel_slug": "nexon_ia",
+                        "titulo": "Historia de la IA",
+                        "elementos": [element],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            audit_path = root / "rejected_audit.json"
+            audit_path.write_text(
+                json.dumps(
+                    {
+                        "channel_slug": "nexon_ia",
+                        "assets_fingerprint": _assets_fingerprint(manifest_path),
+                        "audited_assets": 1,
+                        "status": "rejected",
+                        "elements": [
+                            {
+                                "id": "s02_c004",
+                                "approved": False,
+                                "reason": "No aparece John McCarthy.",
+                                "asset_sha256": _sha256(original),
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            rounds: list[int] = []
+
+            def builder(manifest, targets, round_number, round_dir, channel_slug):
+                rounds.append(round_number)
+                candidate = _repair_clip(targets[0], round_number)
+                candidate_path = round_dir / f"candidate_r{round_number}.png"
+                round_dir.mkdir(parents=True, exist_ok=True)
+                _image(candidate_path, (20 * round_number, 80, 140))
+                candidate["archivo"] = str(candidate_path)
+                candidate["estado"] = (
+                    "generado_local"
+                    if candidate.get("tipo_recurso") == "texto_animado"
+                    else "descargado"
+                )
+                candidate["fuente"] = "prueba"
+                path = round_dir / "candidates.json"
+                path.write_text(
+                    json.dumps(
+                        {
+                            "channel_slug": channel_slug,
+                            "elementos": [candidate],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                return path
+
+            result = ReparadorVisual(
+                data_dir=root / "data",
+                output_dir=root / "output",
+                auditor=_RejectIsolatedFalsePositiveAuditor(root / "audits"),
+                candidate_builder=builder,
+            ).repair(
+                assets_path=manifest_path,
+                channel_slug="nexon_ia",
+                audit_path=audit_path,
+                attempts=2,
+                start_round=2,
+            )
+
+            updated = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(rounds, [2, 3])
+            self.assertEqual(result["status"], "approved")
+            self.assertEqual(result["pending_assets"], 0)
+            self.assertEqual(len(result["intermediate_audits"]), 1)
+            self.assertEqual(updated["elementos"][0]["tipo_recurso"], "texto_animado")
+            self.assertIn("fallback_editorial", updated["elementos"][0])
 
 
 if __name__ == "__main__":

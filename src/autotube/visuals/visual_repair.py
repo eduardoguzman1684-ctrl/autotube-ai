@@ -16,7 +16,7 @@ from autotube.visuals.final_visual_auditor import (
 )
 
 
-REPAIR_VERSION = "visual_repair_v3"
+REPAIR_VERSION = "visual_repair_v3.1"
 
 
 class VisualRepairError(RuntimeError):
@@ -578,6 +578,11 @@ class ReparadorVisual:
 
         replacements: dict[str, dict[str, Any]] = {}
         replacement_log: list[dict[str, Any]] = []
+        intermediate_audits: list[str] = []
+        required_assets = int(initial_audit.get("audited_assets", 0) or 0)
+        if limit > 0:
+            required_assets = min(required_assets or limit, limit)
+        last_round = start_round + attempts - 1
 
         for round_number in range(start_round, start_round + attempts):
             if not remaining:
@@ -639,6 +644,7 @@ class ReparadorVisual:
                 limit=0,
             )
 
+            approved_this_round: set[str] = set()
             for audit_item in candidate_audit.get("elements", []):
                 if not isinstance(audit_item, dict):
                     continue
@@ -739,6 +745,42 @@ class ReparadorVisual:
                 }
                 replacements[event_id] = updated
                 remaining.pop(event_id, None)
+                approved_this_round.add(event_id)
+
+            # Un candidato puede aprobarse de forma aislada y aun asi fallar
+            # cuando se vuelve a auditar dentro de la coleccion real. Antes de
+            # avanzar a la siguiente estrategia, reconstruimos el manifiesto
+            # completo y reincorporamos esos falsos positivos a ``remaining``.
+            if approved_this_round and round_number < last_round:
+                validation_manifest = copy.deepcopy(manifest)
+                validation_manifest["elementos"] = [
+                    replacements.get(_event_id(item), item)
+                    if isinstance(item, dict)
+                    else item
+                    for item in elements
+                ]
+                validation_path = round_dir / "round_validation_manifest.json"
+                _write_json_atomic(validation_path, validation_manifest)
+                validation_audit = self.auditor.audit(
+                    assets_path=validation_path,
+                    channel_slug=channel_slug,
+                    limit=max(0, required_assets),
+                )
+                intermediate_audits.append(str(validation_audit.get("path", "")))
+                validation_status = {
+                    str(item.get("id", "")): bool(item.get("approved"))
+                    for item in validation_audit.get("elements", [])
+                    if isinstance(item, dict)
+                }
+                for event_id in rejected_audit:
+                    if validation_status.get(event_id) is True:
+                        remaining.pop(event_id, None)
+                        continue
+                    # No conservar como reemplazo definitivo un candidato que
+                    # la auditoria integral rechazo o no pudo comprobar.
+                    replacements.pop(event_id, None)
+                    if event_id in by_id:
+                        remaining[event_id] = by_id[event_id]
 
         if replacements:
             new_elements = []
@@ -767,9 +809,6 @@ class ReparadorVisual:
                 )
             _write_json_atomic(assets_file, manifest)
 
-        required_assets = int(initial_audit.get("audited_assets", 0) or 0)
-        if limit > 0:
-            required_assets = min(required_assets or limit, limit)
         final_audit = self.auditor.audit(
             assets_path=assets_file,
             channel_slug=channel_slug,
@@ -790,6 +829,7 @@ class ReparadorVisual:
             "assets_manifest": str(assets_file),
             "initial_audit": str(initial_audit.get("path", "")),
             "final_audit": str(final_audit.get("path", "")),
+            "intermediate_audits": intermediate_audits,
             "rejected_initially": len(rejected_audit),
             "repaired_assets": len(replacements),
             "pending_assets": len(final_pending_ids),

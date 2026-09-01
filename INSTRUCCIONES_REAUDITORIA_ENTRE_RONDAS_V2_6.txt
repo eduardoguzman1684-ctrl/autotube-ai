@@ -1,0 +1,48 @@
+AUTOTUBE AI - REAUDITORIA ENTRE RONDAS V2.6
+============================================
+
+OBJETIVO
+--------
+Evitar que un candidato visual aprobado de forma aislada se considere definitivo
+si la auditoria integral de la coleccion detecta que sigue siendo incorrecto.
+
+CAUSA CORREGIDA
+---------------
+En v2.5, s02_c004 recibio 93/100 durante la evaluacion aislada de candidatos.
+La auditoria final comprobo despues que era una fotografia contemporanea, pero
+ya no quedaban rondas disponibles para aplicarle el fallback editorial factual.
+
+MEJORAS
+-------
+1. Audita el manifiesto completo despues de cada ronda que acepta candidatos.
+2. Reincorpora automaticamente los falsos positivos a la ronda siguiente.
+3. Descarta como reemplazo definitivo cualquier candidato rechazado en contexto.
+4. Conserva el bloqueo del render hasta obtener aprobacion total.
+5. Registra las auditorias intermedias en el informe de reparacion.
+6. Mantiene intactos los recursos previamente aprobados.
+
+COMANDO PARA COMPLETAR EL CASO REAL
+----------------------------------
+$assetsPath = "C:\Users\eduar\Documents\autotube-ai\output\assets\coleccion_20260831_074117\assets_manifest.json"
+$auditPath = "C:\Users\eduar\Documents\autotube-ai\output\visual_audits\audit_20260901_073056_668996\visual_audit.json"
+
+autotube visual-repair `
+  --canal nexon_ia `
+  --assets "$assetsPath" `
+  --visual-audit "$auditPath" `
+  --limite 8 `
+  --ronda-inicial 3 `
+  --intentos 1
+
+RESULTADO ESPERADO
+------------------
+s02_c004 se sustituye por una tarjeta documental factual sobre John McCarthy.
+La auditoria debe aprobar los 8 recursos antes de habilitar el render.
+
+VERSIONADO RECOMENDADO
+----------------------
+Commit:
+fix: reauditar candidatos entre rondas y recuperar falsos positivos v2.6
+
+Etiqueta:
+reauditoria-entre-rondas-v2.6
