@@ -24,6 +24,7 @@ from autotube.visuals.final_visual_auditor import (
     AuditorVisualFinal,
     find_compatible_audit,
 )
+from autotube.visuals.visual_repair import ReparadorVisual
 from autotube.video.composer import (
     CompositorVideo,
     cargar_contexto_render,
@@ -358,6 +359,39 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Cantidad de recursos a auditar; 0 audita la coleccion completa.",
     )
     visual_audit_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Canal propietario de la produccion.",
+    )
+
+    visual_repair_parser = subcomandos.add_parser(
+        "visual-repair",
+        help="Reemplaza solo los visuales rechazados y vuelve a auditarlos.",
+    )
+    visual_repair_parser.add_argument(
+        "--assets",
+        default=None,
+        help="Manifiesto visual. Usa el mas reciente por defecto.",
+    )
+    visual_repair_parser.add_argument(
+        "--visual-audit",
+        default=None,
+        help="Auditoria rechazada compatible; la crea si se omite.",
+    )
+    visual_repair_parser.add_argument(
+        "--limite",
+        type=int,
+        default=0,
+        help="Cantidad inicial a revisar; 0 procesa la coleccion completa.",
+    )
+    visual_repair_parser.add_argument(
+        "--intentos",
+        type=int,
+        default=3,
+        help="Rondas selectivas de reemplazo, entre 1 y 5.",
+    )
+    visual_repair_parser.add_argument(
         "--canal",
         choices=CHANNEL_CHOICES,
         default=DEFAULT_CHANNEL,
@@ -1895,6 +1929,55 @@ def auditar_visuales_finales(argumentos: argparse.Namespace) -> None:
         )
 
 
+def reparar_visuales_rechazados(argumentos: argparse.Namespace) -> None:
+    """Reemplaza selectivamente recursos rechazados y los vuelve a auditar."""
+    settings = load_settings()
+    candidates = sorted(
+        settings.output_dir.glob("assets/coleccion_*/assets_manifest.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if argumentos.assets:
+        assets_path = Path(argumentos.assets).expanduser().resolve()
+    elif candidates:
+        assets_path = candidates[0].resolve()
+    else:
+        raise FileNotFoundError("No existe un manifiesto visual para reparar.")
+
+    audit_path = (
+        Path(argumentos.visual_audit).expanduser().resolve()
+        if getattr(argumentos, "visual_audit", None)
+        else None
+    )
+    result = ReparadorVisual(
+        data_dir=settings.data_dir,
+        output_dir=settings.output_dir,
+    ).repair(
+        assets_path=assets_path,
+        channel_slug=getattr(argumentos, "canal", DEFAULT_CHANNEL),
+        audit_path=audit_path,
+        limit=max(0, int(argumentos.limite)),
+        attempts=int(argumentos.intentos),
+    )
+
+    print("\nREPARACION VISUAL SELECTIVA")
+    print("=" * 72)
+    print(f"Rechazados inicialmente: {result['rejected_initially']}")
+    print(f"Recursos reemplazados: {result['repaired_assets']}")
+    print(f"Recursos pendientes: {result['pending_assets']}")
+    print(f"Manifiesto protegido: {result['backup_manifest']}")
+    print(f"Auditoria final: {result['final_audit']}")
+    print(f"Informe: {result['path']}")
+    print(f"Estado: {str(result['status']).upper()}")
+    print("=" * 72)
+
+    if result["status"] != "approved":
+        raise RuntimeError(
+            "La reparacion no alcanzo aprobacion total. "
+            "El render permanece bloqueado."
+        )
+
+
 def renderizar_video(argumentos: argparse.Namespace) -> None:
     """Renderiza una vista previa o el video completo."""
     settings = load_settings()
@@ -3338,11 +3421,13 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
                 ],
             ),
             (
-                "Auditoria visual final",
+                "Auditoria y reparacion visual final",
                 [
-                    "visual-audit",
+                    "visual-repair",
                     "--limite",
                     "0",
+                    "--intentos",
+                    "3",
                     "--canal",
                     canal_slug,
                 ],
@@ -3860,6 +3945,10 @@ def main() -> None:
 
         if argumentos.comando == "visual-audit":
             auditar_visuales_finales(argumentos)
+            return
+
+        if argumentos.comando == "visual-repair":
+            reparar_visuales_rechazados(argumentos)
             return
 
         if argumentos.comando == "visual-cache":

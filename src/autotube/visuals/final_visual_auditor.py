@@ -225,7 +225,10 @@ class AuditorVisualFinal:
         if limit > 0:
             elements = elements[:limit]
 
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Los procesos de reparacion pueden ejecutar varias auditorias dentro
+        # del mismo segundo. Los microsegundos impiden que un informe pise a
+        # otro y preservan la trazabilidad de cada candidato.
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         audit_dir = self.output_dir / "visual_audits" / f"audit_{stamp}"
         representatives_dir = audit_dir / "representatives"
         representatives_dir.mkdir(parents=True, exist_ok=True)

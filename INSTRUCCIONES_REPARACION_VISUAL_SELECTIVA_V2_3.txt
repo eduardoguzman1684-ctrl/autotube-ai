@@ -1,0 +1,66 @@
+AUTOTUBE AI - REPARACION VISUAL SELECTIVA V2.3
+================================================
+
+OBJETIVO
+-------
+Reemplazar exclusivamente los recursos rechazados por la auditoria de
+pixeles V2.2. Los recursos aprobados se conservan sin cambios. Cada candidato
+nuevo se audita antes de modificar el manifiesto y el render sigue bloqueado
+si la auditoria final no alcanza aprobacion total.
+
+MEJORAS PRINCIPALES
+------------------
+1. Nuevo comando: autotube visual-repair.
+2. Valida que la auditoria corresponda a los bytes actuales del manifiesto.
+3. Conserva los visuales ya aprobados.
+4. Aisla las busquedas de reparacion para impedir reutilizar el cache historico
+   que contenia los recursos rechazados.
+5. Rechaza candidatos identicos a cualquier recurso actual o ya probado.
+6. Genera localmente texto animado, graficos o interfaces cuando ese sea el
+   tipo editorial solicitado.
+7. Si un video de stock no coincide, desde la segunda ronda permite una imagen
+   exacta animada con Ken Burns en vez de aceptar un video semanticamente falso.
+8. Copia un reemplazo al manifiesto solamente si sus pixeles son aprobados.
+9. Crea una copia previa del manifiesto y un informe de trazabilidad.
+10. Ejecuta una auditoria final completa sobre el alcance solicitado.
+11. Usa microsegundos en las carpetas de auditoria para no sobrescribir informes.
+12. El pipeline automatico usa auditoria y reparacion antes de la timeline.
+
+COMANDO PARA EL CASO VALIDADO DE OCHO RECURSOS
+----------------------------------------------
+$assetsPath = "C:\Users\eduar\Documents\autotube-ai\output\assets\coleccion_20260831_074117\assets_manifest.json"
+$auditPath = "C:\Users\eduar\Documents\autotube-ai\output\visual_audits\audit_20260901_022740\visual_audit.json"
+
+autotube visual-repair `
+  --canal nexon_ia `
+  --assets "$assetsPath" `
+  --visual-audit "$auditPath" `
+  --limite 8 `
+  --intentos 3
+
+RESULTADO SEGURO
+----------------
+- APPROVED: todos los recursos del alcance quedaron auditados y se puede
+  regenerar la timeline y la vista previa.
+- REJECTED: uno o mas recursos siguen incorrectos. El comando termina con error
+  controlado y el render permanece bloqueado.
+
+PRUEBAS
+-------
+python -m unittest -v `
+  tests.test_visual_repair_v2_3 `
+  tests.test_final_visual_audit_v2_2 `
+  tests.test_speech_alignment_v2 `
+  tests.test_code_backup `
+  tests.test_semantic_timeline `
+  tests.test_visual_coherence `
+  tests.test_voice_quality `
+  tests.test_automation_guardian
+
+VERSIONADO RECOMENDADO
+----------------------
+Commit:
+fix: reparar selectivamente visuales rechazados v2.3
+
+Etiqueta:
+reparacion-visual-selectiva-v2.3
