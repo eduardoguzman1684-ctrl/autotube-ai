@@ -16,7 +16,7 @@ from autotube.visuals.final_visual_auditor import (
 )
 
 
-REPAIR_VERSION = "visual_repair_v2"
+REPAIR_VERSION = "visual_repair_v3"
 
 
 class VisualRepairError(RuntimeError):
@@ -239,6 +239,88 @@ def _enrich_contract(element: dict[str, Any]) -> dict[str, Any]:
     return enriched
 
 
+def _apply_editorial_fallback(
+    clip: dict[str, Any],
+    round_number: int,
+) -> dict[str, Any]:
+    """Usa una tarjeta factual solo tras agotar dos rondas de archivo real."""
+    if round_number < 3:
+        return clip
+
+    context = _normalized(
+        " ".join(
+            str(clip.get(key, ""))
+            for key in ("descripcion", "texto_pantalla", "texto_narrado")
+        )
+    )
+    screen = ""
+    description = ""
+
+    if "john mccarthy" in context:
+        screen = "John McCarthy\nPadre de la Inteligencia Artificial"
+        description = (
+            "Tarjeta documental animada que identifica claramente a John "
+            "McCarthy y su papel fundador en la inteligencia artificial."
+        )
+    elif "dartmouth" in context and (
+        "investigador" in context or "fundador" in context or "1956" in context
+    ) and not any(
+        token in context for token in ("propuesta", "manifiesto", "documento")
+    ):
+        screen = "Dartmouth 1956\nMcCarthy · Minsky · Rochester · Shannon"
+        description = (
+            "Tarjeta documental animada de Dartmouth 1956 con los nombres de "
+            "los cuatro investigadores vinculados a la propuesta fundacional."
+        )
+    elif "diagrama" in context and "flujo" in context:
+        screen = "1956\nDescribir la inteligencia para poder simularla"
+        description = (
+            "Tarjeta documental animada que representa la idea central de "
+            "describir formalmente la inteligencia para simularla en una maquina."
+        )
+    elif "dartmouth" in context and any(
+        token in context for token in ("propuesta", "manifiesto", "documento")
+    ):
+        screen = "Dartmouth, 1955\nPropuesta fundacional de la IA"
+        description = (
+            "Tarjeta documental animada que identifica la propuesta de Dartmouth "
+            "de 1955 como documento fundacional de la inteligencia artificial."
+        )
+
+    if not screen:
+        return clip
+
+    original_description = str(clip.get("descripcion", ""))
+    clip["descripcion_editorial_original"] = original_description
+    clip["tipo_recurso"] = "texto_animado"
+    clip["texto_pantalla"] = screen
+    clip["descripcion"] = description
+    clip["concepto_central"] = description
+    clip["criterios_obligatorios"] = [
+        description,
+        f'El texto visible debe contener: "{screen.replace(chr(10), " / ")}".',
+        "La tarjeta debe ser legible, especifica y directamente vinculada a la narracion.",
+    ]
+    clip["elementos_prohibidos"] = [
+        "Fotografia de stock generica o contemporanea.",
+        "Personas, documentos u objetos presentados falsamente como archivo real.",
+        "Contenido sin los nombres, fecha o concepto historico solicitado.",
+    ]
+    clip["consultas_alternativas"] = []
+    clip["busqueda_en"] = ""
+    clip["busqueda_es"] = ""
+    clip["fallback_editorial"] = {
+        "version": REPAIR_VERSION,
+        "round": round_number,
+        "reason": (
+            "Dos rondas de busqueda de archivo real no produjeron un recurso "
+            "aprobado; se usa una tarjeta factual, nunca stock falso."
+        ),
+        "descripcion_original": original_description,
+    }
+    return clip
+
+
 def _repair_clip(element: dict[str, Any], round_number: int) -> dict[str, Any]:
     """Reconstruye un clip sin reutilizar metadata de la descarga rechazada."""
     clip = _enrich_contract(element)
@@ -285,7 +367,7 @@ def _repair_clip(element: dict[str, Any], round_number: int) -> dict[str, Any]:
     clip["busqueda_en"] = alternatives[0] if alternatives else ""
     clip["busqueda_es"] = ""
     clip["_repair_original_type"] = original_type
-    return clip
+    return _apply_editorial_fallback(clip, round_number)
 
 
 def _repair_plan(
@@ -393,12 +475,19 @@ class ReparadorVisual:
         audit_path: Path | None = None,
         limit: int = 0,
         attempts: int = 3,
+        start_round: int = 1,
     ) -> dict[str, Any]:
         assets_file = Path(assets_path).expanduser().resolve()
         if not assets_file.is_file():
             raise VisualRepairError(f"No existe el manifiesto visual: {assets_file}")
         if attempts < 1 or attempts > 5:
             raise VisualRepairError("Los intentos deben estar entre 1 y 5.")
+        if start_round < 1 or start_round > 5:
+            raise VisualRepairError("La ronda inicial debe estar entre 1 y 5.")
+        if start_round + attempts - 1 > 5:
+            raise VisualRepairError(
+                "La ronda inicial mas los intentos no puede superar la ronda 5."
+            )
 
         manifest = _read_json(assets_file)
         manifest_channel = str(manifest.get("channel_slug", channel_slug))
@@ -490,7 +579,7 @@ class ReparadorVisual:
         replacements: dict[str, dict[str, Any]] = {}
         replacement_log: list[dict[str, Any]] = []
 
-        for round_number in range(1, attempts + 1):
+        for round_number in range(start_round, start_round + attempts):
             if not remaining:
                 break
             round_dir = repair_dir / f"round_{round_number:02d}"
@@ -609,6 +698,18 @@ class ReparadorVisual:
                 updated["tipo_recurso"] = str(
                     candidate.get("tipo_recurso", updated.get("tipo_recurso", ""))
                 )
+                for key in (
+                    "descripcion",
+                    "descripcion_editorial_original",
+                    "concepto_central",
+                    "criterios_obligatorios",
+                    "elementos_prohibidos",
+                    "consultas_alternativas",
+                    "texto_pantalla",
+                    "fallback_editorial",
+                ):
+                    if key in candidate:
+                        updated[key] = copy.deepcopy(candidate[key])
                 for key in (
                     "pexels",
                     "pixabay",

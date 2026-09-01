@@ -1,0 +1,48 @@
+AUTOTUBE AI - FALLBACK EDITORIAL PROGRESIVO V2.5
+================================================
+
+OBJETIVO
+-------
+Continuar una reparacion desde la segunda o tercera estrategia sin repetir
+consultas ya agotadas. Si dos rondas de archivo real no producen un recurso
+aprobado, usa una tarjeta documental factual y especifica antes que stock falso.
+
+MEJORAS
+-------
+1. Nueva opcion de visual-repair: --ronda-inicial.
+2. Permite ejecutar rondas 2 y 3 sin repetir la ronda 1.
+3. La ronda 2 utiliza la segunda consulta documental en ingles.
+4. La ronda 3 crea tarjetas locales especificas para casos historicos dificiles:
+   - Dartmouth 1956 y los cuatro investigadores;
+   - John McCarthy y su papel fundador;
+   - la idea de describir y simular la inteligencia;
+   - la propuesta fundacional de Dartmouth de 1955.
+5. Las tarjetas nunca se presentan como fotografias de archivo reales.
+6. Persiste en el manifiesto el contrato editorial realmente aprobado.
+7. Conserva la descripcion original dentro de la trazabilidad de reparacion.
+8. El render continua bloqueado mientras exista un recurso rechazado.
+
+COMANDO PARA CONTINUAR EL CASO REAL
+----------------------------------
+$assetsPath = "C:\Users\eduar\Documents\autotube-ai\output\assets\coleccion_20260831_074117\assets_manifest.json"
+$auditPath = "C:\Users\eduar\Documents\autotube-ai\output\visual_audits\audit_20260901_070550_782413\visual_audit.json"
+
+autotube visual-repair `
+  --canal nexon_ia `
+  --assets "$assetsPath" `
+  --visual-audit "$auditPath" `
+  --limite 8 `
+  --ronda-inicial 2 `
+  --intentos 2
+
+PRUEBAS NUEVAS
+--------------
+python -m unittest -v tests.test_editorial_fallback_v2_5
+
+VERSIONADO RECOMENDADO
+----------------------
+Commit:
+feat: continuar reparacion con fallback editorial progresivo v2.5
+
+Etiqueta:
+fallback-editorial-v2.5
