@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import hashlib
@@ -9,6 +9,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from youtube_channels import (
+    CHANNEL_CHOICES,
+    DEFAULT_CHANNEL,
+    channel_profile,
+    normalize_channel_slug,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 QUEUE_FILE = (
@@ -17,6 +24,38 @@ QUEUE_FILE = (
     / "publish"
     / "upload_queue.json"
 )
+
+
+def channel_of_element(element: dict[str, Any]) -> str:
+    return normalize_channel_slug(
+        str(
+            element.get(
+                "channel_slug",
+                DEFAULT_CHANNEL,
+            )
+        )
+    )
+
+
+def publication_id(
+    kind: str,
+    sha256: str,
+    channel_slug: str,
+) -> str:
+    if channel_slug == DEFAULT_CHANNEL:
+        return f"{kind}:{sha256[:24]}"
+
+    return f"{kind}:{channel_slug}:{sha256[:24]}"
+
+
+def shorts_state_file(
+    manifest: Path,
+    channel_slug: str,
+) -> Path:
+    if channel_slug == DEFAULT_CHANNEL:
+        return manifest.parent / "youtube_publish.json"
+
+    return manifest.parent / f"youtube_publish_{channel_slug}.json"
 
 
 def ahora() -> str:
@@ -193,6 +232,7 @@ def huella_archivo(
 def buscar_publicacion_documental(
     video: Path,
     sha256: str,
+    channel_slug: str,
 ) -> tuple[
     Path | None,
     dict[str, Any],
@@ -216,6 +256,18 @@ def buscar_publicacion_documental(
         datos = cargar_json(
             manifiesto
         )
+
+        manifest_channel = normalize_channel_slug(
+            str(
+                datos.get(
+                    "channel_slug",
+                    DEFAULT_CHANNEL,
+                )
+            )
+        )
+
+        if manifest_channel != channel_slug:
+            continue
 
         ruta_publicada = ruta_segura(
             datos.get("video")
@@ -356,11 +408,92 @@ def agregar_o_actualizar(
     )
 
 
+def depurar_aliases_cruzados(
+    cola: dict[str, Any],
+) -> int:
+    """Elimina pendientes duplicados atribuidos al canal incorrecto."""
+    elementos = [
+        elemento
+        for elemento in cola.get("elementos", [])
+        if isinstance(elemento, dict)
+    ]
+    eliminar: set[str] = set()
+
+    for elemento in elementos:
+        if elemento.get("estado") != "pendiente":
+            continue
+
+        sha256 = str(elemento.get("sha256", ""))
+        archivo = str(elemento.get("archivo", ""))
+        canal = channel_of_element(elemento)
+
+        if not sha256 or not archivo:
+            continue
+
+        pertenece_otro_canal = any(
+            otro is not elemento
+            and str(otro.get("sha256", "")) == sha256
+            and str(otro.get("archivo", "")) == archivo
+            and channel_of_element(otro) != canal
+            and (
+                otro.get("estado") == "publicado"
+                or str(otro.get("creado_en", ""))
+                < str(elemento.get("creado_en", ""))
+            )
+            for otro in elementos
+        )
+
+        if pertenece_otro_canal:
+            eliminar.add(str(elemento.get("id", "")))
+
+    if eliminar:
+        cola["elementos"] = [
+            elemento
+            for elemento in elementos
+            if str(elemento.get("id", "")) not in eliminar
+        ]
+
+    return len(eliminar)
+
+
+def inicio_pipeline_canal(
+    channel_slug: str,
+) -> datetime | None:
+    """Obtiene el inicio de la producción activa del canal."""
+    estado = cargar_json(
+        ROOT
+        / "data"
+        / "pipeline_states"
+        / f"{channel_slug}.json"
+    )
+    valor = str(estado.get("iniciado_en", "")).strip()
+
+    if not valor:
+        return None
+
+    try:
+        return datetime.fromisoformat(valor)
+    except ValueError:
+        return None
+
+
 def sincronizar(
     cola: dict[str, Any] | None = None,
+    channel_slug: str = DEFAULT_CHANNEL,
 ) -> dict[str, Any]:
+    channel_slug = normalize_channel_slug(channel_slug)
+    profile = channel_profile(channel_slug)
+
     if cola is None:
         cola = cargar_cola()
+
+    aliases_eliminados = depurar_aliases_cruzados(cola)
+    if aliases_eliminados:
+        print(
+            "AVISO: se retiraron "
+            f"{aliases_eliminados} pendientes duplicados "
+            "atribuidos al canal incorrecto."
+        )
 
     video = ultimo(
         "output/videos/render_*/"
@@ -374,6 +507,67 @@ def sincronizar(
         )
 
     if video is not None:
+        metadata_candidate = cargar_json(
+            ROOT
+            / "data"
+            / "publish"
+            / "metadata.json"
+        )
+        metadata_channel = normalize_channel_slug(
+            str(
+                metadata_candidate.get(
+                    "channel_slug",
+                    DEFAULT_CHANNEL,
+                )
+            )
+        )
+
+        if metadata_channel != channel_slug:
+            video = None
+
+    if video is not None:
+        inicio_pipeline = inicio_pipeline_canal(
+            channel_slug
+        )
+
+        if (
+            inicio_pipeline is not None
+            and video.stat().st_mtime
+            < inicio_pipeline.timestamp() - 60
+        ):
+            print(
+                "AVISO: el video local mas reciente es anterior "
+                "a la produccion del canal y no se agregara a "
+                "su cola."
+            )
+            video = None
+
+    if video is not None:
+        sha256 = huella_archivo(
+            video,
+            cola,
+        )
+
+        canal_de_otra_huella = next(
+            (
+                channel_of_element(elemento)
+                for elemento in cola.get("elementos", [])
+                if isinstance(elemento, dict)
+                and str(elemento.get("sha256", "")) == sha256
+                and channel_of_element(elemento) != channel_slug
+            ),
+            "",
+        )
+
+        if canal_de_otra_huella:
+            print(
+                "AVISO: el archivo pertenece a otro canal "
+                f"({canal_de_otra_huella}) y no se agregara "
+                f"a {channel_slug}."
+            )
+            video = None
+
+    if video is not None:
         sha256 = huella_archivo(
             video,
             cola,
@@ -383,6 +577,7 @@ def sincronizar(
             buscar_publicacion_documental(
                 video,
                 sha256,
+                channel_slug,
             )
         )
 
@@ -401,11 +596,14 @@ def sincronizar(
         )
 
         elemento = {
-            "id": (
-                "documental:"
-                f"{sha256[:24]}"
+            "id": publication_id(
+                "documental",
+                sha256,
+                channel_slug,
             ),
             "tipo": "documental",
+            "channel_slug": channel_slug,
+            "channel_name": profile["display_name"],
             "orden": 0,
             "titulo": str(
                 publicacion.get(
@@ -457,14 +655,30 @@ def sincronizar(
         "shorts_manifest.json"
     )
 
+    if manifiesto_shorts is not None:
+        candidate_short_manifest = cargar_json(
+            manifiesto_shorts
+        )
+        manifest_channel = normalize_channel_slug(
+            str(
+                candidate_short_manifest.get(
+                    "channel_slug",
+                    DEFAULT_CHANNEL,
+                )
+            )
+        )
+
+        if manifest_channel != channel_slug:
+            manifiesto_shorts = None
+
     if manifiesto_shorts:
         datos_shorts = cargar_json(
             manifiesto_shorts
         )
 
-        estado_ruta = (
-            manifiesto_shorts.parent
-            / "youtube_publish.json"
+        estado_ruta = shorts_state_file(
+            manifiesto_shorts,
+            channel_slug,
         )
 
         estado_publicacion = (
@@ -572,11 +786,14 @@ def sincronizar(
                     estado = "pendiente"
 
                 elemento = {
-                    "id": (
-                        "short:"
-                        f"{sha256[:24]}"
+                    "id": publication_id(
+                        "short",
+                        sha256,
+                        channel_slug,
                     ),
                     "tipo": "short",
+                    "channel_slug": channel_slug,
+                    "channel_name": profile["display_name"],
                     "orden": orden,
                     "titulo": str(
                         short.get(
@@ -626,7 +843,9 @@ def sincronizar(
 
 def resumen_estados(
     cola: dict[str, Any],
+    channel_slug: str = DEFAULT_CHANNEL,
 ) -> dict[str, int]:
+    channel_slug = normalize_channel_slug(channel_slug)
     resumen: dict[str, int] = {}
 
     for elemento in cola.get(
@@ -637,6 +856,9 @@ def resumen_estados(
             elemento,
             dict,
         ):
+            continue
+
+        if channel_of_element(elemento) != channel_slug:
             continue
 
         estado = str(
@@ -659,7 +881,10 @@ def resumen_estados(
 
 def mostrar_estado(
     cola: dict[str, Any],
+    channel_slug: str = DEFAULT_CHANNEL,
 ) -> None:
+    channel_slug = normalize_channel_slug(channel_slug)
+    profile = channel_profile(channel_slug)
     elementos = [
         elemento
         for elemento in cola.get(
@@ -670,11 +895,13 @@ def mostrar_estado(
             elemento,
             dict,
         )
+        and channel_of_element(elemento) == channel_slug
     ]
 
     print()
     print(
-        "NEXON IA - COLA DE PUBLICACION"
+        f"{profile['display_name'].upper()} "
+        "- COLA DE PUBLICACION"
     )
     print("=" * 72)
     print(
@@ -684,7 +911,8 @@ def mostrar_estado(
 
     for estado, cantidad in sorted(
         resumen_estados(
-            cola
+            cola,
+            channel_slug,
         ).items()
     ):
         print(
@@ -797,8 +1025,12 @@ def marcar_error(
 
 def reanudar(
     dry_run: bool,
+    channel_slug: str = DEFAULT_CHANNEL,
 ) -> int:
-    cola = sincronizar()
+    channel_slug = normalize_channel_slug(channel_slug)
+    cola = sincronizar(
+        channel_slug=channel_slug,
+    )
 
     pendientes = [
         elemento
@@ -820,6 +1052,7 @@ def reanudar(
                 "aplazado_conexion",
                 "error",
             }
+            and channel_of_element(elemento) == channel_slug
         )
     ]
 
@@ -848,6 +1081,8 @@ def reanudar(
                 / "tools"
                 / "youtube_publish_all.py"
             ),
+            "--canal",
+            channel_slug,
         ]
 
         print()
@@ -889,7 +1124,8 @@ def reanudar(
                 raise
 
     cola = sincronizar(
-        cargar_cola()
+        cargar_cola(),
+        channel_slug=channel_slug,
     )
 
     pendientes_shorts = [
@@ -916,6 +1152,7 @@ def reanudar(
                 "aplazado_conexion",
                 "error",
             }
+            and channel_of_element(elemento) == channel_slug
         )
     ]
 
@@ -950,6 +1187,8 @@ def reanudar(
             ),
             "--manifiesto",
             manifiesto,
+            "--canal",
+            channel_slug,
         ]
 
         print()
@@ -994,7 +1233,8 @@ def reanudar(
             raise
 
         cola = sincronizar(
-            cargar_cola()
+            cargar_cola(),
+            channel_slug=channel_slug,
         )
 
     print()
@@ -1004,8 +1244,10 @@ def reanudar(
 
     mostrar_estado(
         sincronizar(
-            cargar_cola()
-        )
+            cargar_cola(),
+            channel_slug=channel_slug,
+        ),
+        channel_slug,
     )
 
     return 0
@@ -1024,7 +1266,7 @@ def main() -> int:
         required=True,
     )
 
-    subcomandos.add_parser(
+    sync_parser = subcomandos.add_parser(
         "sync",
         help=(
             "Detecta videos y Shorts "
@@ -1032,7 +1274,7 @@ def main() -> int:
         ),
     )
 
-    subcomandos.add_parser(
+    status_parser = subcomandos.add_parser(
         "status",
         help=(
             "Muestra el estado de "
@@ -1059,25 +1301,44 @@ def main() -> int:
         ),
     )
 
+    for command_parser in (
+        sync_parser,
+        status_parser,
+        resume_parser,
+    ):
+        command_parser.add_argument(
+            "--canal",
+            choices=CHANNEL_CHOICES,
+            default=DEFAULT_CHANNEL,
+            help="Canal cuya cola se administrara.",
+        )
+
     args = parser.parse_args()
 
     if args.accion == "sync":
-        cola = sincronizar()
+        cola = sincronizar(
+            channel_slug=args.canal,
+        )
         mostrar_estado(
-            cola
+            cola,
+            args.canal,
         )
         return 0
 
     if args.accion == "status":
-        cola = sincronizar()
+        cola = sincronizar(
+            channel_slug=args.canal,
+        )
         mostrar_estado(
-            cola
+            cola,
+            args.canal,
         )
         return 0
 
     if args.accion == "resume":
         return reanudar(
-            dry_run=args.dry_run
+            dry_run=args.dry_run,
+            channel_slug=args.canal,
         )
 
     return 1

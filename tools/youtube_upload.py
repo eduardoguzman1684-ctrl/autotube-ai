@@ -1,50 +1,25 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import sys
 from pathlib import Path
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
+from youtube_channels import (
+    CHANNEL_CHOICES,
+    DEFAULT_CHANNEL,
+    build_youtube_client,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
-TOKEN_FILE = ROOT / "config" / "youtube" / "token.json"
 
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
 ]
-
-
-def get_credentials() -> Credentials:
-    if not TOKEN_FILE.exists():
-        raise FileNotFoundError(
-            "No existe token.json. Ejecuta primero la autenticación."
-        )
-
-    credentials = Credentials.from_authorized_user_file(
-        str(TOKEN_FILE),
-        SCOPES,
-    )
-
-    if credentials.expired and credentials.refresh_token:
-        credentials.refresh(Request())
-        TOKEN_FILE.write_text(
-            credentials.to_json(),
-            encoding="utf-8",
-        )
-
-    if not credentials.valid:
-        raise RuntimeError(
-            "El token de YouTube no es válido. "
-            "Vuelve a ejecutar la autenticación."
-        )
-
-    return credentials
 
 
 def get_latest_video() -> Path:
@@ -71,13 +46,13 @@ def upload_video(
     description: str,
     tags: list[str],
     privacy: str,
+    channel_slug: str,
 ) -> str:
-    youtube = build(
-        "youtube",
-        "v3",
-        credentials=get_credentials(),
-        cache_discovery=False,
+    youtube, identity = build_youtube_client(
+        channel_slug,
+        SCOPES,
     )
+    print(f"Canal verificado: {identity['channel_title']}")
 
     body = {
         "snippet": {
@@ -135,6 +110,11 @@ def main() -> int:
         choices=["private", "unlisted", "public"],
         default="private",
     )
+    parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+    )
     args = parser.parse_args()
 
     video_path = (
@@ -186,6 +166,7 @@ Suscríbete al canal para aprender más sobre inteligencia artificial, automatiz
         description=description,
         tags=tags,
         privacy=args.privacy,
+        channel_slug=args.canal,
     )
 
     print()

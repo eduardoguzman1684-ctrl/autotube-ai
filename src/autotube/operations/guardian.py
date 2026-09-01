@@ -13,6 +13,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from autotube.content.channel_profiles import (
+    DEFAULT_CHANNEL,
+    channel_profile,
+    normalize_channel_slug,
+)
+from autotube.operations.channel_runtime import (
+    incomplete_other_channel_states,
+    migrate_legacy_pipeline_state,
+    pipeline_state_path,
+)
+
 
 class EjecucionEnCursoError(RuntimeError):
     """Indica que otro guardian mantiene el bloqueo activo."""
@@ -26,10 +37,20 @@ class GuardianPipeline:
     def __init__(
         self,
         project_root: Path,
+        channel_slug: str = DEFAULT_CHANNEL,
     ) -> None:
         self.project_root = Path(
             project_root
         ).resolve()
+
+        self.channel_slug = normalize_channel_slug(
+            channel_slug
+        )
+        self.channel_name = str(
+            channel_profile(
+                self.channel_slug
+            )["display_name"]
+        )
 
         self.data_dir = (
             self.project_root
@@ -42,9 +63,26 @@ class GuardianPipeline:
             / "pipeline.lock"
         )
 
-        self.latest_path = (
+        self.channel_data_dir = (
             self.data_dir
+            / "channels"
+            / self.channel_slug
+        )
+
+        self.latest_path = (
+            self.channel_data_dir
             / "guardian_latest.json"
+        )
+
+        migrate_legacy_pipeline_state(
+            self.project_root
+        )
+
+        self.pipeline_state_path = (
+            pipeline_state_path(
+                self.project_root,
+                self.channel_slug,
+            )
         )
 
     @staticmethod
@@ -229,6 +267,12 @@ class GuardianPipeline:
                     "",
                 )
             ),
+            "canal": str(
+                datos.get(
+                    "canal",
+                    "",
+                )
+            ),
         }
 
     def adquirir_bloqueo(
@@ -262,6 +306,7 @@ class GuardianPipeline:
                 "project_root": str(
                     self.project_root
                 ),
+                "canal": self.channel_slug,
             },
             ensure_ascii=False,
             indent=2,
@@ -456,13 +501,32 @@ class GuardianPipeline:
             )
 
         estado_pipeline = self._leer_json(
-            self.project_root
-            / "data"
-            / "pipeline_state.json"
+            self.pipeline_state_path
         )
+
+        otros_pendientes = (
+            incomplete_other_channel_states(
+                self.project_root,
+                self.channel_slug,
+            )
+        )
+
+        if otros_pendientes:
+            canales = ", ".join(
+                item["canal"]
+                for item in otros_pendientes
+            )
+            errores.append(
+                "Existe una produccion incompleta de otro canal "
+                f"({canales}). Finalizala antes de iniciar "
+                f"{self.channel_slug}; los recursos de produccion "
+                "todavia son compartidos."
+            )
 
         return {
             "generado_en": self._ahora(),
+            "canal": self.channel_slug,
+            "nombre_canal": self.channel_name,
             "aprobado": not errores,
             "errores": errores,
             "advertencias": advertencias,
@@ -505,6 +569,7 @@ class GuardianPipeline:
                     else []
                 ),
             },
+            "otros_canales_pendientes": otros_pendientes,
         }
 
     def _ejecutable_autotube(
@@ -566,9 +631,7 @@ class GuardianPipeline:
         self,
     ) -> bool:
         estado = self._leer_json(
-            self.project_root
-            / "data"
-            / "pipeline_state.json"
+            self.pipeline_state_path
         )
 
         if not estado:
@@ -620,6 +683,8 @@ class GuardianPipeline:
                         base
                         + [
                             "publish-resume",
+                            "--canal",
+                            self.channel_slug,
                         ]
                     ),
                 }
@@ -629,6 +694,8 @@ class GuardianPipeline:
             base
             + [
                 "run",
+                "--canal",
+                self.channel_slug,
             ]
         )
 
@@ -686,7 +753,7 @@ class GuardianPipeline:
         )
 
         historico = (
-            self.data_dir
+            self.channel_data_dir
             / f"guardian_{marca}.json"
         )
 
@@ -723,7 +790,9 @@ class GuardianPipeline:
         )
 
         informe: dict[str, Any] = {
-            "version": 1,
+            "version": 2,
+            "canal": self.channel_slug,
+            "nombre_canal": self.channel_name,
             "iniciado_en": self._ahora(),
             "finalizado_en": "",
             "estado": "simulacion",
@@ -886,6 +955,11 @@ class GuardianPipeline:
             str(
                 informe["estado"]
             ).upper(),
+        )
+        print(
+            "Canal:",
+            f"{informe['nombre_canal']} "
+            f"({informe['canal']})",
         )
         print(
             "Modo:",

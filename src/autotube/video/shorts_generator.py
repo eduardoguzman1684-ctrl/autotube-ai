@@ -13,6 +13,13 @@ from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
 
+from autotube.content.channel_profiles import (
+    CHANNEL_CHOICES,
+    DEFAULT_CHANNEL,
+    channel_profile,
+    normalize_channel_slug,
+)
+
 from autotube.video.hardware_encoder import (
     ConfiguracionCodificador,
     describir_codificador,
@@ -62,6 +69,13 @@ class GeneradorShorts:
         "impacto",
         "imposible",
         "inteligencia",
+        "decision",
+        "emocion",
+        "habito",
+        "liderazgo",
+        "limites",
+        "mente",
+        "relacion",
         "nunca",
         "peligro",
         "problema",
@@ -109,8 +123,14 @@ class GeneradorShorts:
         "y ",
     )
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(
+        self,
+        project_root: Path,
+        channel_slug: str = DEFAULT_CHANNEL,
+    ) -> None:
         self.project_root = Path(project_root).resolve()
+        self.channel_slug = normalize_channel_slug(channel_slug)
+        self.profile = channel_profile(self.channel_slug)
         self._codificador_anunciado = False
 
     def _latest(self, pattern: str) -> Path:
@@ -663,19 +683,23 @@ class GeneradorShorts:
             (0, 0, 0, 0),
         )
         dibujo = ImageDraw.Draw(imagen)
+        colores = self.profile["colors"]
+        primario = tuple(colores["primary"])
+        acento = tuple(colores["accent"])
+        panel = tuple(colores["panel"])
 
         dibujo.rounded_rectangle(
             (34, 34, 1046, 330),
             radius=34,
-            fill=(4, 8, 22, 224),
-            outline=(0, 214, 235, 235),
+            fill=(*panel, 224),
+            outline=(*primario, 235),
             width=4,
         )
         dibujo.rounded_rectangle(
             (54, 54, 300, 116),
             radius=15,
-            fill=(6, 12, 28, 245),
-            outline=(0, 224, 245, 255),
+            fill=(*panel, 245),
+            outline=(*primario, 255),
             width=3,
         )
 
@@ -685,7 +709,7 @@ class GeneradorShorts:
 
         dibujo.text(
             (82, 68),
-            "NEXON IA",
+            self.profile["brand_label"],
             font=fuente_marca,
             fill=(255, 255, 255, 255),
         )
@@ -703,7 +727,7 @@ class GeneradorShorts:
         for indice, linea in enumerate(lineas):
             caja = dibujo.textbbox((0, 0), linea, font=fuente_gancho)
             x = (self.ANCHO - (caja[2] - caja[0])) // 2
-            color = (245, 48, 68, 255) if indice == len(lineas) - 1 else (
+            color = (*acento, 255) if indice == len(lineas) - 1 else (
                 255,
                 255,
                 255,
@@ -722,12 +746,12 @@ class GeneradorShorts:
         dibujo.rounded_rectangle(
             (74, 1548, 930, 1656),
             radius=28,
-            fill=(4, 8, 22, 232),
-            outline=(122, 58, 237, 245),
+            fill=(*panel, 232),
+            outline=(*primario, 245),
             width=4,
         )
 
-        cta = "DOCUMENTAL COMPLETO EN NEXON IA"
+        cta = self.profile["short_cta"]
         caja_cta = dibujo.textbbox((0, 0), cta, font=fuente_cta)
         x_cta = (self.ANCHO - (caja_cta[2] - caja_cta[0])) // 2
         dibujo.text(
@@ -946,6 +970,21 @@ class GeneradorShorts:
         video = self._buscar_video()
         srt = self._buscar_srt()
         metadata = self._metadata()
+        metadata_channel = normalize_channel_slug(
+            str(
+                metadata.get(
+                    "channel_slug",
+                    DEFAULT_CHANNEL,
+                )
+            )
+        )
+
+        if metadata_channel != self.channel_slug:
+            raise RuntimeError(
+                "BLOQUEO EDITORIAL: la metadata pertenece a "
+                f"{metadata_channel}, no a {self.channel_slug}."
+            )
+
         subtitulos = self._leer_srt(srt)
         fragmentos = self.seleccionar_fragmentos(
             subtitulos,
@@ -981,8 +1020,8 @@ class GeneradorShorts:
                 "titulo": f"{gancho[:85]} #Shorts",
                 "descripcion": (
                     f"{gancho}\n\n"
-                    "Mira el documental completo en NEXON IA.\n\n"
-                    "#InteligenciaArtificial #Tecnologia #Shorts"
+                    f"{self.profile['short_description']}\n\n"
+                    f"{self.profile['hashtags']}"
                 ),
                 "archivo": str(archivo) if not solo_plan else "",
             }
@@ -1008,6 +1047,8 @@ class GeneradorShorts:
             "generado_en": datetime.now().astimezone().isoformat(
                 timespec="seconds"
             ),
+            "channel_slug": self.channel_slug,
+            "channel_name": self.profile["display_name"],
             "titulo_documental": metadata.get("title", ""),
             "video_origen": str(video),
             "subtitulos_origen": str(srt),
@@ -1033,10 +1074,18 @@ def main() -> int:
     parser.add_argument("--cantidad", type=int, default=4)
     parser.add_argument("--duracion", type=float, default=42.0)
     parser.add_argument("--solo-plan", action="store_true")
+    parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+    )
     args = parser.parse_args()
 
     project_root = Path(__file__).resolve().parents[3]
-    generador = GeneradorShorts(project_root)
+    generador = GeneradorShorts(
+        project_root,
+        channel_slug=args.canal,
+    )
     resultado = generador.generar(
         cantidad=args.cantidad,
         duracion_objetivo=args.duracion,

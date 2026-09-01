@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from datetime import datetime
@@ -6,6 +6,14 @@ from pathlib import Path
 from typing import Any
 
 from autotube.ai.gemini_client import GeminiClient
+from autotube.content.channel_profiles import (
+    DEFAULT_CHANNEL,
+    channel_profile,
+    editorial_prompt,
+    experiments_directory,
+    normalize_channel_slug,
+    strategy_profile_path,
+)
 from autotube.content.thumbnail_generator import (
     GeneradorMiniaturaYouTube,
 )
@@ -26,9 +34,16 @@ class GestorExperimentosYouTube:
         self,
         project_root: Path,
         cliente: GeminiClient | None = None,
+        channel_slug: str = DEFAULT_CHANNEL,
     ) -> None:
         self.project_root = Path(project_root)
         self.cliente = cliente
+        self.channel_slug = normalize_channel_slug(channel_slug)
+        self.profile = channel_profile(self.channel_slug)
+        self.output_dir = experiments_directory(
+            self.project_root,
+            self.channel_slug,
+        )
 
     def _latest(self, *patrones: str) -> Path:
         archivos: list[Path] = []
@@ -94,11 +109,9 @@ class GestorExperimentosYouTube:
     def _perfil_estrategico(
         self,
     ) -> tuple[dict[str, Any], Path | None]:
-        ruta = (
-            self.project_root
-            / "data"
-            / "analytics"
-            / "strategy_profile.json"
+        ruta = strategy_profile_path(
+            self.project_root / "data",
+            self.channel_slug,
         )
 
         if not ruta.is_file():
@@ -196,12 +209,7 @@ class GestorExperimentosYouTube:
         archivo: str | Path | None = None,
     ) -> tuple[dict[str, Any], Path]:
         if archivo is None:
-            ruta = (
-                self.project_root
-                / "data"
-                / "experiments"
-                / "experimento_actual.json"
-            )
+            ruta = self.output_dir / "experimento_actual.json"
         else:
             ruta = Path(archivo).expanduser()
 
@@ -529,12 +537,7 @@ class GestorExperimentosYouTube:
             encoding="utf-8",
         )
 
-        ruta_actual = (
-            self.project_root
-            / "data"
-            / "experiments"
-            / "experimento_actual.json"
-        )
+        ruta_actual = self.output_dir / "experimento_actual.json"
 
         ruta_actual.parent.mkdir(
             parents=True,
@@ -574,6 +577,28 @@ class GestorExperimentosYouTube:
         metadata, ruta_metadata = self._metadata()
         contenido_guion, ruta_guion = self._guion()
         perfil, ruta_perfil = self._perfil_estrategico()
+        contexto_editorial = editorial_prompt(
+            self.channel_slug
+        )
+
+        for nombre, contenido in (
+            ("metadata", metadata),
+            ("guion", contenido_guion),
+        ):
+            source_channel = normalize_channel_slug(
+                str(
+                    contenido.get(
+                        "channel_slug",
+                        DEFAULT_CHANNEL,
+                    )
+                )
+            )
+
+            if source_channel != self.channel_slug:
+                raise RuntimeError(
+                    f"BLOQUEO EDITORIAL: {nombre} pertenece a "
+                    f"{source_channel}, no a {self.channel_slug}."
+                )
 
         guion = contenido_guion.get(
             "guion",
@@ -596,10 +621,10 @@ class GestorExperimentosYouTube:
                 "title",
                 guion.get(
                     "titulo",
-                    "El futuro de la inteligencia artificial",
+                    self.profile["default_niche"],
                 ),
             ),
-            "El futuro de la inteligencia artificial",
+            self.profile["default_niche"],
             100,
         )
 
@@ -608,13 +633,11 @@ class GestorExperimentosYouTube:
                 "gancho_inicial",
                 idea.get(
                     "gancho",
-                    "Descubre el cambio que la inteligencia "
-                    "artificial ya esta provocando.",
+                    self.profile["mission"],
                 ),
             ),
             (
-                "Descubre el cambio que la inteligencia "
-                "artificial ya esta provocando."
+                self.profile["mission"]
             ),
             500,
         )
@@ -683,8 +706,8 @@ class GestorExperimentosYouTube:
         prompt = f"""
 Actua como estratega de experimentacion editorial para YouTube.
 
-CANAL:
-NEXON IA.
+PERFIL DEL CANAL:
+{contexto_editorial}
 
 NIVEL ACTUAL DE EVIDENCIA:
 Exploratorio. No declares ganadores anticipadamente.
@@ -904,6 +927,7 @@ una hipotesis medible. No inventes hechos ausentes del guion.
             generador_miniatura = (
                 GeneradorMiniaturaYouTube(
                     project_root=self.project_root,
+                    channel_slug=self.channel_slug,
                 )
             )
 
@@ -941,7 +965,8 @@ una hipotesis medible. No inventes hechos ausentes del guion.
                 .isoformat(timespec="seconds")
             ),
             "estado": "planificado",
-            "canal": "NEXON IA",
+            "channel_slug": self.channel_slug,
+            "canal": self.profile["display_name"],
             "variable": variable,
             "cantidad_variantes": len(variantes),
             "metrica": metrica,
@@ -985,11 +1010,7 @@ una hipotesis medible. No inventes hechos ausentes del guion.
             },
         }
 
-        output_dir = (
-            self.project_root
-            / "data"
-            / "experiments"
-        )
+        output_dir = self.output_dir
 
         output_dir.mkdir(
             parents=True,

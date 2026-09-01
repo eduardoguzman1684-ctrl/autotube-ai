@@ -6,6 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from autotube.ai.gemini_client import GeminiClient
+from autotube.content.channel_profiles import (
+    DEFAULT_CHANNEL,
+    channel_profile,
+    editorial_prompt,
+    normalize_channel_slug,
+)
 
 
 class GeneradorMetadataYouTube:
@@ -15,9 +21,12 @@ class GeneradorMetadataYouTube:
         self,
         project_root: Path,
         cliente: GeminiClient | None = None,
+        channel_slug: str = DEFAULT_CHANNEL,
     ) -> None:
         self.project_root = Path(project_root)
         self.cliente = cliente or GeminiClient()
+        self.channel_slug = normalize_channel_slug(channel_slug)
+        self.profile = channel_profile(self.channel_slug)
 
     def _latest(self, *patterns: str) -> Path:
         candidatos: list[Path] = []
@@ -104,15 +113,32 @@ class GeneradorMetadataYouTube:
         )
         guion = self._cargar_json(guion_path)
         plan = self._cargar_json(plan_path)
+
+        script_channel = normalize_channel_slug(
+            str(
+                guion.get(
+                    "channel_slug",
+                    DEFAULT_CHANNEL,
+                )
+            )
+        )
+
+        if script_channel != self.channel_slug:
+            raise RuntimeError(
+                "BLOQUEO EDITORIAL: el guion mas reciente pertenece "
+                f"a {script_channel}, no a {self.channel_slug}."
+            )
+
         capitulos = self._capitulos(plan)
 
         contexto = json.dumps(guion, ensure_ascii=False)[:24000]
+        contexto_editorial = editorial_prompt(self.channel_slug)
 
         prompt = f"""
 Eres especialista en packaging y SEO de YouTube para un canal en español.
 
-CANAL: NEXON IA
-NICHO: inteligencia artificial, automatización, productividad y herramientas digitales.
+PERFIL DEL CANAL:
+{contexto_editorial}
 
 Crea los metadatos del video usando SOLO el contenido real del guion.
 
@@ -123,7 +149,8 @@ REGLAS:
 - Título en español, máximo 95 caracteres.
 - Atractivo, claro y sin clickbait engañoso.
 - Descripción útil y orientada a lo que el espectador aprenderá.
-- Incluye llamada a suscribirse a NEXON IA.
+- Incluye esta llamada a la accion o una version breve equivalente:
+  {self.profile['cta']}
 - No inventes funciones, precios, resultados ni cifras.
 - No escribas capítulos: el sistema los añadirá con tiempos reales.
 - Genera entre 10 y 18 etiquetas relevantes.
@@ -154,10 +181,12 @@ REGLAS:
             descripcion += "\n\nCAPÍTULOS\n\n" + "\n".join(capitulos)
 
         metadata = {
+            "channel_slug": self.channel_slug,
+            "channel_name": self.profile["display_name"],
             "title": titulo,
             "description": descripcion[:5000],
             "tags": tags,
-            "category_id": "28",
+            "category_id": self.profile["category_id"],
             "language": "es",
             "privacy": "private",
             "chapters": capitulos,

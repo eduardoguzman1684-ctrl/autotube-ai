@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -9,6 +9,12 @@ from pathlib import Path
 from typing import Any
 
 import youtube_publish_all as publicador
+from youtube_channels import (
+    CHANNEL_CHOICES,
+    DEFAULT_CHANNEL,
+    channel_profile,
+    normalize_channel_slug,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -179,6 +185,19 @@ def resolver_manifiesto(
     return ruta
 
 
+def ruta_estado_publicacion(
+    manifiesto: Path,
+    channel_slug: str,
+) -> Path:
+    if channel_slug == DEFAULT_CHANNEL:
+        return manifiesto.parent / "youtube_publish.json"
+
+    return (
+        manifiesto.parent
+        / f"youtube_publish_{channel_slug}.json"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
 
@@ -197,7 +216,15 @@ def main() -> int:
         ),
     )
 
+    parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Canal de YouTube que recibira los Shorts.",
+    )
+
     args = parser.parse_args()
+    profile = channel_profile(args.canal)
 
     manifiesto_ruta = resolver_manifiesto(
         args.manifiesto
@@ -208,6 +235,21 @@ def main() -> int:
             encoding="utf-8-sig"
         )
     )
+
+    manifest_channel = normalize_channel_slug(
+        str(
+            datos.get(
+                "channel_slug",
+                DEFAULT_CHANNEL,
+            )
+        )
+    )
+
+    if manifest_channel != args.canal:
+        raise RuntimeError(
+            "BLOQUEO DE SEGURIDAD: este lote de Shorts pertenece "
+            f"a {manifest_channel}, no a {args.canal}."
+        )
 
     shorts_raw = datos.get(
         "shorts",
@@ -230,9 +272,9 @@ def main() -> int:
             "El manifiesto no contiene Shorts validos."
         )
 
-    estado_ruta = (
-        manifiesto_ruta.parent
-        / "youtube_publish.json"
+    estado_ruta = ruta_estado_publicacion(
+        manifiesto_ruta,
+        args.canal,
     )
 
     if estado_ruta.is_file():
@@ -241,6 +283,19 @@ def main() -> int:
                 encoding="utf-8-sig"
             )
         )
+
+        state_channel = str(
+            estado.get(
+                "channel_slug",
+                DEFAULT_CHANNEL,
+            )
+        )
+
+        if state_channel != args.canal:
+            raise RuntimeError(
+                "El estado de este lote pertenece al canal "
+                f"{state_channel}, no a {args.canal}."
+            )
     else:
         estado = {
             "creado_en": (
@@ -251,6 +306,8 @@ def main() -> int:
             "manifiesto": str(
                 manifiesto_ruta
             ),
+            "channel_slug": args.canal,
+            "channel_name": profile["display_name"],
             "visibilidad": "private",
             "estado": "pendiente",
             "publicaciones": [],
@@ -280,7 +337,10 @@ def main() -> int:
     }
 
     print()
-    print("NEXON IA - PUBLICACION DE SHORTS")
+    print(
+        f"{profile['display_name'].upper()} "
+        "- PUBLICACION DE SHORTS"
+    )
     print("=" * 56)
     print(f"Manifiesto: {manifiesto_ruta}")
     print(f"Cantidad: {len(shorts)}")
@@ -354,7 +414,7 @@ def main() -> int:
         titulo = str(
             elemento.get(
                 "titulo",
-                f"NEXON IA Short {orden}",
+                f"{profile['display_name']} Short {orden}",
             )
         ).strip()
 
@@ -366,7 +426,7 @@ def main() -> int:
         descripcion = str(
             elemento.get(
                 "descripcion",
-                "Contenido de NEXON IA.",
+                profile["short_description"],
             )
         )[:5000]
 
@@ -403,13 +463,7 @@ def main() -> int:
         metadata = {
             "title": titulo,
             "description": descripcion,
-            "tags": [
-                "Inteligencia Artificial",
-                "Tecnologia",
-                "Ciencia",
-                "NEXON IA",
-                "Shorts",
-            ],
+            "tags": profile["short_tags"],
             "category_id": "28",
             "language": "es",
         }
@@ -421,7 +475,9 @@ def main() -> int:
         try:
             if youtube is None:
                 youtube = (
-                    publicador.youtube_client()
+                    publicador.youtube_client(
+                        args.canal
+                    )
                 )
 
             video_id = (
@@ -482,7 +538,8 @@ def main() -> int:
                     "Cuando regrese la conexion ejecuta:"
                 )
                 print(
-                    "autotube publish-resume"
+                    "autotube publish-resume "
+                    f"--canal {args.canal}"
                 )
                 print(
                     f"Estado: {estado_ruta}"
@@ -540,7 +597,8 @@ def main() -> int:
             )
             print(
                 "python tools/youtube_publish_shorts.py "
-                f'--manifiesto "{manifiesto_ruta}"'
+                f'--manifiesto "{manifiesto_ruta}" '
+                f"--canal {args.canal}"
             )
             print(
                 f"Estado: {estado_ruta}"
@@ -551,6 +609,8 @@ def main() -> int:
 
         registro = {
             "orden": orden,
+            "channel_slug": args.canal,
+            "channel_name": profile["display_name"],
             "video_id": video_id,
             "url": (
                 f"https://youtu.be/{video_id}"

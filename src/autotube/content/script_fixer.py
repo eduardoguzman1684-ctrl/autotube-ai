@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import math
 from datetime import datetime
@@ -7,6 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from autotube.ai.gemini_client import GeminiClient
+from autotube.content.channel_profiles import (
+    DEFAULT_CHANNEL,
+    channel_profile,
+    editorial_prompt,
+    normalize_channel_slug,
+)
 from autotube.content.script_generator import SCRIPT_SCHEMA
 from autotube.content.script_validator import (
     contar_palabras,
@@ -40,6 +47,210 @@ def contar_palabras_guion(guion: dict[str, Any]) -> int:
             if parte.strip()
         )
     )
+
+
+AMPLIACIONES_COGNIVIVA = (
+    (
+        "Al observar {tema} con calma, conviene distinguir entre lo que "
+        "pensamos, lo que sentimos y la respuesta que finalmente elegimos."
+    ),
+    (
+        "Esa diferencia importa porque una reacción automática puede parecer "
+        "inevitable, aunque en realidad forme parte de un patrón aprendido."
+    ),
+    (
+        "En la vida cotidiana, reconocer ese patrón permite comprender el "
+        "proceso sin convertirlo en una etiqueta ni en un juicio personal."
+    ),
+    (
+        "También ayuda considerar el contexto: la misma conducta puede cumplir "
+        "funciones distintas según la situación, la presión y las expectativas."
+    ),
+    (
+        "Por eso, el tema de {tema} no se explica mediante una sola causa, sino "
+        "por la interacción entre hábitos, emociones y decisiones."
+    ),
+    (
+        "Un cambio de perspectiva comienza al detectar el instante que precede "
+        "a la acción y preguntarnos qué necesidad intenta resolver."
+    ),
+    (
+        "Esta mirada evita simplificaciones y permite analizar tanto el alivio "
+        "inmediato como las consecuencias que aparecen con el paso del tiempo."
+    ),
+    (
+        "Lo relevante no es buscar una reacción perfecta, sino entender qué "
+        "elementos mantienen la respuesta y cuáles pueden modificarse gradualmente."
+    ),
+    (
+        "Cuando conectamos pensamiento, emoción y conducta, la explicación de "
+        "{tema} adquiere una dimensión más práctica y cercana."
+    ),
+    (
+        "Ese análisis también permite diferenciar una dificultad ocasional de "
+        "un patrón repetido que termina afectando decisiones importantes."
+    ),
+    (
+        "A veces el conflicto no está en desconocer lo que conviene hacer, sino "
+        "en tolerar la incomodidad que acompaña al primer paso."
+    ),
+    (
+        "Comprender esa tensión ayuda a explicar por qué la intención y la acción "
+        "no siempre avanzan al mismo ritmo."
+    ),
+    (
+        "Desde esta perspectiva, pequeños detalles del entorno pueden facilitar "
+        "una respuesta o reforzar, casi sin notarlo, la conducta anterior."
+    ),
+    (
+        "La experiencia se vuelve más clara cuando observamos la secuencia "
+        "completa: desencadenante, interpretación, emoción, decisión y consecuencia."
+    ),
+    (
+        "Esa secuencia ofrece un mapa útil para comprender {tema} sin reducir la "
+        "complejidad de cada persona y de cada circunstancia."
+    ),
+    (
+        "Otro aspecto importante es el diálogo interno, porque puede aumentar la "
+        "presión o abrir espacio para una evaluación más equilibrada."
+    ),
+    (
+        "La culpa y la exigencia suelen estrechar la atención, mientras que una "
+        "mirada curiosa permite identificar opciones que antes pasaban inadvertidas."
+    ),
+    (
+        "Esto no significa ignorar la responsabilidad, sino comprender mejor las "
+        "condiciones necesarias para actuar de manera más consciente."
+    ),
+    (
+        "En {tema}, la repetición puede convertir una respuesta puntual en una "
+        "rutina que el cerebro ejecuta con cada vez menos deliberación."
+    ),
+    (
+        "Interrumpir esa rutina empieza por hacer visible lo automático y observar "
+        "qué ocurre cuando aparece una alternativa pequeña y concreta."
+    ),
+    (
+        "Las relaciones también influyen, porque las expectativas ajenas pueden "
+        "modificar la forma en que interpretamos riesgos, límites y prioridades."
+    ),
+    (
+        "Por esa razón, entender el comportamiento requiere mirar tanto la "
+        "experiencia individual como el ambiente social que la rodea."
+    ),
+    (
+        "A largo plazo, la suma de decisiones pequeñas puede pesar más que una "
+        "resolución intensa que resulta imposible mantener."
+    ),
+    (
+        "Esta idea conecta {tema} con una pregunta esencial: qué condiciones hacen "
+        "más probable la conducta que realmente queremos sostener."
+    ),
+)
+
+
+AMPLIACIONES_GENERALES = (
+    (
+        "Para comprender mejor {tema}, conviene separar sus causas inmediatas de "
+        "los procesos que se desarrollan de forma gradual."
+    ),
+    (
+        "Esta distinción permite observar el fenómeno completo y no solamente el "
+        "resultado que aparece al final del proceso."
+    ),
+    (
+        "El contexto también importa, porque una misma decisión puede producir "
+        "consecuencias diferentes según las condiciones que la rodean."
+    ),
+    (
+        "Al conectar estos elementos, {tema} deja de ser una idea aislada y se "
+        "convierte en una secuencia más fácil de analizar."
+    ),
+    (
+        "Otro punto relevante es la relación entre las decisiones presentes y "
+        "los efectos que solo se hacen visibles con el tiempo."
+    ),
+    (
+        "Mirar esa relación ayuda a evitar explicaciones simples y permite valorar "
+        "los matices que suelen quedar fuera de la primera impresión."
+    ),
+    (
+        "En este escenario, cada elemento cumple una función específica y modifica "
+        "la manera en que interpretamos el conjunto."
+    ),
+    (
+        "Por eso, entender {tema} requiere seguir el proceso paso a paso y comparar "
+        "sus implicaciones inmediatas y futuras."
+    ),
+    (
+        "La pregunta central no se limita a qué ocurre, sino también a por qué "
+        "ocurre y qué cambia cuando varían las condiciones."
+    ),
+    (
+        "Esta perspectiva ofrece una base más sólida para interpretar el tema sin "
+        "depender de afirmaciones exageradas ni conclusiones apresuradas."
+    ),
+    (
+        "Los detalles adquieren mayor sentido cuando se relacionan con el panorama "
+        "general y con las consecuencias observables del proceso."
+    ),
+    (
+        "Así, {tema} puede examinarse como parte de una transformación más amplia, "
+        "con oportunidades, límites y decisiones todavía abiertas."
+    ),
+)
+
+
+def completar_duracion_localmente(
+    guion: dict[str, Any],
+    palabras_minimas: int,
+    palabras_maximas: int,
+    channel_slug: str,
+) -> tuple[dict[str, Any], int]:
+    """Completa una carencia moderada sin depender de otra llamada externa."""
+    ampliado = copy.deepcopy(guion)
+    escenas = ampliado.get("escenas")
+
+    if not isinstance(escenas, list) or not escenas:
+        return ampliado, contar_palabras_guion(ampliado)
+
+    plantillas = (
+        AMPLIACIONES_COGNIVIVA
+        if channel_slug == "cogniviva"
+        else AMPLIACIONES_GENERALES
+    )
+
+    indice = 0
+    max_aportes = len(plantillas) * 2
+
+    while (
+        contar_palabras_guion(ampliado) < palabras_minimas
+        and indice < max_aportes
+    ):
+        escena = escenas[indice % len(escenas)]
+
+        if not isinstance(escena, dict):
+            indice += 1
+            continue
+
+        titulo = str(
+            escena.get("titulo", "este aspecto")
+        ).strip() or "este aspecto"
+        plantilla = plantillas[indice % len(plantillas)]
+        aporte = plantilla.format(tema=titulo)
+        palabras_actuales = contar_palabras_guion(ampliado)
+
+        if (
+            palabras_actuales + contar_palabras(aporte)
+            > palabras_maximas
+        ):
+            break
+
+        narracion = str(escena.get("narracion", "")).strip()
+        escena["narracion"] = f"{narracion} {aporte}".strip()
+        indice += 1
+
+    return ampliado, contar_palabras_guion(ampliado)
 
 
 def cargar_guion_para_correccion(
@@ -79,12 +290,25 @@ class ReparadorGuiones:
         self,
         contenido: dict[str, Any],
         palabras_por_minuto: int = 145,
+        channel_slug: str | None = None,
     ) -> dict[str, Any]:
         """Corrige la duración real del guion."""
         if palabras_por_minuto < 100 or palabras_por_minuto > 220:
             raise ValueError(
                 "Las palabras por minuto deben estar entre 100 y 220."
             )
+
+        channel_slug = normalize_channel_slug(
+            channel_slug
+            or str(
+                contenido.get(
+                    "channel_slug",
+                    DEFAULT_CHANNEL,
+                )
+            )
+        )
+        profile = channel_profile(channel_slug)
+        contexto_editorial = editorial_prompt(channel_slug)
 
         guion_original = contenido.get("guion")
 
@@ -179,8 +403,10 @@ class ReparadorGuiones:
         )
 
         prompt = f"""
-Actua como editor profesional de documentales de divulgacion
-sobre inteligencia artificial para el canal NEXON IA.
+Actua como editor profesional de videos documentales educativos.
+
+PERFIL DEL CANAL:
+{contexto_editorial}
 
 El siguiente documental declara una duracion de
 {minutos_objetivo} minutos, pero su narracion es demasiado corta.
@@ -214,6 +440,12 @@ INSTRUCCIONES OBLIGATORIAS:
     y compatibles con videos de stock, imagenes de stock y texto animado.
 13. Conserva una conclusion clara y una llamada a la accion breve.
 14. Devuelve exclusivamente el JSON solicitado.
+15. Mantiene el enfoque editorial del canal y no introduzcas temas,
+    marca ni llamadas a la accion de otro canal.
+16. La llamada a la accion debe corresponder a esta marca:
+    {profile['cta']}
+17. En psicologia, informa sin diagnosticar, prescribir ni prometer
+    resultados clinicos.
 
 El resultado debe contener narracion suficiente para aproximarse
 realmente a la duracion declarada.
@@ -226,7 +458,7 @@ realmente a la duracion declarada.
         palabras_minimas = math.ceil(
             minutos_objetivo
             * palabras_por_minuto
-            * 0.95
+            * 0.94
         )
 
         palabras_maximas = math.floor(
@@ -237,6 +469,8 @@ realmente a la duracion declarada.
 
         mejor_guion = guion_original
         mejor_palabras = palabras_antes
+        ajuste_local_aplicado = False
+        palabras_antes_ajuste_local = palabras_antes
 
         for intento in range(1, 4):
             prompt_intento = (
@@ -251,10 +485,17 @@ realmente a la duracion declarada.
                 + f"{palabras_objetivo_total} palabras."
             )
 
-            candidato = self.cliente.generar_json(
-                prompt=prompt_intento,
-                schema=SCRIPT_SCHEMA,
-            )
+            try:
+                candidato = self.cliente.generar_json(
+                    prompt=prompt_intento,
+                    schema=SCRIPT_SCHEMA,
+                )
+            except Exception as error:
+                print(
+                    f"Intento {intento}/3 no disponible: "
+                    f"{type(error).__name__}."
+                )
+                continue
 
             escenas_candidatas = candidato.get(
                 "escenas"
@@ -303,14 +544,34 @@ realmente a la duracion declarada.
                 mejor_guion = candidato
                 mejor_palabras = palabras_candidato
 
+        if mejor_palabras < palabras_minimas:
+            palabras_antes_ajuste_local = mejor_palabras
+            mejor_guion, mejor_palabras = (
+                completar_duracion_localmente(
+                    guion=mejor_guion,
+                    palabras_minimas=palabras_minimas,
+                    palabras_maximas=palabras_maximas,
+                    channel_slug=channel_slug,
+                )
+            )
+            ajuste_local_aplicado = (
+                mejor_palabras > palabras_antes_ajuste_local
+            )
+
+            if ajuste_local_aplicado:
+                print(
+                    "Ajuste editorial local aplicado: "
+                    f"{palabras_antes_ajuste_local} -> "
+                    f"{mejor_palabras} palabras."
+                )
+
         if not (
-            palabras_minimas
-            <= mejor_palabras
-            <= palabras_maximas
+            palabras_minimas <= mejor_palabras <= palabras_maximas
         ):
             raise RuntimeError(
                 "Gemini no alcanzo el rango valido despues "
-                "de 3 intentos. No se guardara un guion invalido."
+                "de 3 intentos y el ajuste local no pudo completar "
+                "la duracion. No se guardara un guion invalido."
             )
 
         guion_corregido = mejor_guion
@@ -376,6 +637,8 @@ realmente a la duracion declarada.
             .astimezone()
             .isoformat(timespec="seconds"),
             "modelo": self.cliente.last_model_used,
+            "channel_slug": channel_slug,
+            "channel_name": profile["display_name"],
             "idioma": contenido.get(
                 "idioma",
                 "español",
@@ -389,6 +652,10 @@ realmente a la duracion declarada.
                 "palabras_objetivo": palabras_objetivo_total,
                 "palabras_antes": palabras_antes,
                 "palabras_despues": palabras_despues,
+                "ajuste_local_aplicado": ajuste_local_aplicado,
+                "palabras_antes_ajuste_local": (
+                    palabras_antes_ajuste_local
+                ),
                 "archivo_original": contenido.get(
                     "generado_en",
                     "",

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -7,6 +7,12 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from youtube_channels import (
+    CHANNEL_CHOICES,
+    DEFAULT_CHANNEL,
+    normalize_channel_slug,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,14 +35,24 @@ def cargar_json(
     return datos
 
 
-def ultimo_informe() -> Path:
+def carpeta_analytics(channel_slug: str) -> Path:
+    channel_slug = normalize_channel_slug(channel_slug)
+    base = ROOT / "data" / "analytics"
+    return (
+        base
+        if channel_slug == DEFAULT_CHANNEL
+        else base / channel_slug
+    )
+
+
+def ultimo_informe(
+    channel_slug: str = DEFAULT_CHANNEL,
+) -> Path:
     candidatos = sorted(
         (
             ruta
             for ruta in (
-                ROOT
-                / "data"
-                / "analytics"
+                carpeta_analytics(channel_slug)
             ).glob(
                 "youtube_analytics_*.json"
             )
@@ -77,9 +93,10 @@ def ultimo_informe() -> Path:
 
 def resolver_informe(
     valor: str | None,
+    channel_slug: str = DEFAULT_CHANNEL,
 ) -> Path:
     if not valor:
-        return ultimo_informe()
+        return ultimo_informe(channel_slug)
 
     ruta = Path(
         valor
@@ -643,10 +660,17 @@ def main() -> int:
         help="Informe de Analytics; usa el mas reciente por defecto.",
     )
 
+    parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+    )
+
     args = parser.parse_args()
 
     ruta_reporte = resolver_informe(
-        args.reporte
+        args.reporte,
+        args.canal,
     )
 
     reporte = cargar_json(
@@ -888,11 +912,7 @@ def main() -> int:
         )
     )
 
-    carpeta = (
-        ROOT
-        / "data"
-        / "analytics"
-    )
+    carpeta = carpeta_analytics(args.canal)
 
     carpeta.mkdir(
         parents=True,

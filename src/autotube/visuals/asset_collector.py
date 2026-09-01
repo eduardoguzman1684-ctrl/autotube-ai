@@ -4,18 +4,27 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import unicodedata
+
+import httpx
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from autotube.visuals.wikimedia_client import ClienteWikimedia
 from autotube.visuals.pexels_client import ClientePexels
+from autotube.visuals.openverse_client import ClienteOpenverse
 from autotube.visuals.visual_verifier import VerificadorVisualGemini
+from autotube.visuals.local_clip_verifier import VerificadorVisualCLIP
+from autotube.visuals.cloudflare_image_generator import (
+    CuotaImagenIAAgotada,
+    GeneradorImagenCloudflare,
+)
 
 
 PIXABAY_API_URL = "https://pixabay.com/api/"
@@ -431,10 +440,22 @@ class RecolectorRecursos:
             )
         )
 
+        self.cliente_openverse = ClienteOpenverse(
+            cache_dir=(
+                data_dir
+                / "cache"
+                / "openverse"
+            )
+        )
+
         self.cliente_pexels = ClientePexels()
 
         self.verificador_visual = VerificadorVisualGemini(
             umbral=88,
+        )
+
+        self.verificador_visual_local = VerificadorVisualCLIP(
+            umbral=self.verificador_visual.umbral,
         )
 
         self.detener_recoleccion = False
@@ -450,6 +471,402 @@ class RecolectorRecursos:
         self.recursos_usados: set[
             tuple[str, int]
         ] = set()
+
+        self.generador_imagen_ia: (
+            GeneradorImagenCloudflare | None
+        ) = None
+
+        self.recursos_aprobados_segmento: dict[
+            int,
+            list[dict[str, Any]],
+        ] = {}
+        self.recursos_historicos_por_titulo: dict[
+            str,
+            list[dict[str, Any]],
+        ] = {}
+        self.reutilizaciones_por_archivo: dict[str, int] = {}
+        self.maximo_reutilizaciones = 2
+        self.maximo_imagenes_ia = max(
+            0,
+            int(os.getenv("AUTOTUBE_MAX_AI_IMAGES", "8")),
+        )
+        self.cuota_imagen_ia_agotada = False
+
+    def _clave_segmento(self, titulo: str) -> str:
+        return nombre_seguro(titulo).lower()
+
+    def _cargar_recursos_historicos(
+        self,
+        channel_slug: str,
+        titulo_video: str,
+    ) -> None:
+        """Indexa imagenes aprobadas de ejecuciones anteriores del video."""
+        self.recursos_historicos_por_titulo.clear()
+        manifiestos = sorted(
+            (self.output_dir / "assets").glob(
+                "coleccion_*/assets_manifest.json"
+            ),
+            key=lambda ruta: ruta.stat().st_mtime,
+            reverse=True,
+        )[:12]
+
+        vistos: set[str] = set()
+        for manifiesto in manifiestos:
+            try:
+                datos = json.loads(
+                    manifiesto.read_text(encoding="utf-8-sig")
+                )
+            except (OSError, ValueError, TypeError):
+                continue
+
+            if str(datos.get("channel_slug", "")) != channel_slug:
+                continue
+            if str(datos.get("titulo", "")).strip() != titulo_video.strip():
+                continue
+
+            elementos = datos.get("elementos", [])
+            if not isinstance(elementos, list):
+                continue
+
+            for elemento in elementos:
+                if not isinstance(elemento, dict):
+                    continue
+                if str(elemento.get("estado", "")) != "descargado":
+                    continue
+
+                archivo = Path(str(elemento.get("archivo", "")))
+                if (
+                    not archivo.is_file()
+                    or archivo.suffix.lower()
+                    not in {".jpg", ".jpeg", ".png", ".webp"}
+                ):
+                    continue
+
+                identidad = str(archivo.resolve()).lower()
+                if identidad in vistos:
+                    continue
+                vistos.add(identidad)
+
+                titulo_segmento = str(
+                    elemento.get("segmento_titulo", "")
+                )
+                clave = self._clave_segmento(titulo_segmento)
+                if not clave:
+                    continue
+
+                self.recursos_historicos_por_titulo.setdefault(
+                    clave,
+                    [],
+                ).append(
+                    {
+                        "archivo": archivo,
+                        "fuente": str(elemento.get("fuente", "historico")),
+                        "historico": True,
+                        "manifiesto": manifiesto,
+                    }
+                )
+
+    def _registrar_recurso_reutilizable(
+        self,
+        segmento_indice: int,
+        archivo: Path,
+        fuente: str,
+    ) -> None:
+        """Conserva imagenes aprobadas del segmento para usos cercanos."""
+        if archivo.suffix.lower() not in {
+            ".jpg", ".jpeg", ".png", ".webp",
+        }:
+            return
+
+        self.recursos_aprobados_segmento.setdefault(
+            segmento_indice,
+            [],
+        ).append(
+            {
+                "archivo": archivo,
+                "fuente": fuente,
+            }
+        )
+
+    def _reutilizar_recurso_aprobado(
+        self,
+        clip: dict[str, Any],
+        segmento_indice: int,
+        titulo_segmento: str,
+        carpeta_segmento: Path,
+        posicion_clip: int,
+    ) -> tuple[Path, dict[str, Any]] | None:
+        """Reutiliza solo una imagen del mismo segmento aprobada por CLIP."""
+        candidatos_actuales = self.recursos_aprobados_segmento.get(
+            segmento_indice,
+            [],
+        )
+        candidatos_historicos = self.recursos_historicos_por_titulo.get(
+            self._clave_segmento(titulo_segmento),
+            [],
+        )[:24]
+        candidatos = []
+        for registro in [*candidatos_actuales, *candidatos_historicos]:
+            archivo = Path(registro["archivo"])
+            usos = self.reutilizaciones_por_archivo.get(str(archivo), 0)
+            limite_usos = (
+                1 if bool(registro.get("historico", False))
+                else self.maximo_reutilizaciones
+            )
+            if archivo.is_file() and usos < limite_usos:
+                candidatos.append(registro)
+
+        if not candidatos:
+            return None
+
+        requisito = self._requisito_visual(clip)
+        mejor: tuple[dict[str, Any], dict[str, Any]] | None = None
+
+        for registro in candidatos:
+            archivo = Path(registro["archivo"])
+            verificacion = self.verificador_visual_local.seleccionar(
+                imagenes=[archivo],
+                requisito_visual=requisito,
+            )
+            if (
+                bool(verificacion.get("aprobada", False))
+                and int(verificacion.get("puntaje", 0)) >= 94
+                and (
+                    mejor is None
+                    or int(verificacion.get("puntaje", 0))
+                    > int(mejor[1].get("puntaje", 0))
+                )
+            ):
+                mejor = (registro, verificacion)
+
+        if mejor is None:
+            return None
+
+        registro, verificacion = mejor
+        origen = Path(registro["archivo"])
+        destino = carpeta_segmento / (
+            f"clip_{posicion_clip:02d}_reutilizado_clip_local"
+            f"{origen.suffix.lower()}"
+        )
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(origen, destino)
+        self.reutilizaciones_por_archivo[str(origen)] = (
+            self.reutilizaciones_por_archivo.get(str(origen), 0) + 1
+        )
+
+        return destino, {
+            "fuente_original": str(registro["fuente"]),
+            "archivo_original": str(origen.resolve()),
+            "coleccion_historica": bool(
+                registro.get("historico", False)
+            ),
+            "manifiesto_original": str(
+                registro.get("manifiesto", "")
+            ),
+            "verificacion_visual": verificacion,
+            "regla": (
+                "Mismo segmento, pixeles verificados por CLIP, "
+                "puntaje minimo 94 y maximo dos reutilizaciones."
+            ),
+        }
+
+    def _completar_cobertura_segmentos(
+        self,
+        elementos: list[dict[str, Any]],
+    ) -> int:
+        """Cubre huecos con el recurso aprobado mas cercano del segmento."""
+        estados_pendientes = {
+            "pendiente_cuota_imagen_ia",
+            "pendiente_sin_recurso",
+        }
+        disponibles_por_segmento: dict[int, list[dict[str, Any]]] = {}
+
+        for elemento in elementos:
+            if str(elemento.get("estado", "")) != "descargado":
+                continue
+            archivo = Path(str(elemento.get("archivo", "")))
+            if not archivo.is_file():
+                continue
+            segmento = int(elemento.get("segmento_indice", 0) or 0)
+            disponibles_por_segmento.setdefault(segmento, []).append(elemento)
+
+        usos: dict[str, int] = {}
+        completados = 0
+
+        for elemento in elementos:
+            estado_anterior = str(elemento.get("estado", ""))
+            if estado_anterior not in estados_pendientes:
+                continue
+
+            segmento = int(elemento.get("segmento_indice", 0) or 0)
+            orden = int(elemento.get("clip_orden", 0) or 0)
+            candidatos = sorted(
+                disponibles_por_segmento.get(segmento, []),
+                key=lambda candidato: (
+                    usos.get(str(candidato.get("archivo", "")), 0),
+                    abs(int(candidato.get("clip_orden", 0) or 0) - orden),
+                ),
+            )
+            candidato = next(
+                (
+                    opcion
+                    for opcion in candidatos
+                    if usos.get(str(opcion.get("archivo", "")), 0) < 3
+                ),
+                None,
+            )
+            if candidato is None:
+                continue
+
+            origen = Path(str(candidato["archivo"]))
+            carpeta = origen.parent
+            destino = carpeta / (
+                f"clip_{orden:02d}_continuidad_segmento{origen.suffix.lower()}"
+            )
+            shutil.copy2(origen, destino)
+            usos[str(origen)] = usos.get(str(origen), 0) + 1
+
+            elemento["estado"] = "descargado"
+            elemento["fuente"] = "continuidad_segmento_aprobada"
+            elemento["archivo"] = str(destino.resolve())
+            elemento["continuidad_visual"] = {
+                "estado_original": estado_anterior,
+                "archivo_original": str(origen.resolve()),
+                "fuente_original": str(candidato.get("fuente", "")),
+                "segmento": segmento,
+                "regla": (
+                    "Recurso previamente aprobado del mismo segmento; "
+                    "se aplica un movimiento cinematografico diferente."
+                ),
+            }
+            elemento.pop("motivo", None)
+            completados += 1
+            print(
+                "  COBERTURA CONTEXTUAL: "
+                f"segmento {segmento}, clip {orden}, origen {origen.name}"
+            )
+
+        return completados
+
+    def _obtener_generador_imagen_ia(
+        self,
+    ) -> GeneradorImagenCloudflare:
+        """Crea el cliente de Workers AI solo cuando hace falta."""
+        if self.generador_imagen_ia is None:
+            self.generador_imagen_ia = GeneradorImagenCloudflare(
+                data_dir=self.data_dir,
+            )
+
+        return self.generador_imagen_ia
+
+    def _generar_imagen_ia_verificada(
+        self,
+        clip: dict[str, Any],
+        carpeta_segmento: Path,
+        posicion_clip: int,
+    ) -> tuple[Path, dict[str, Any]] | None:
+        """Genera hasta tres candidatas y acepta solo una verificada."""
+        generador = self._obtener_generador_imagen_ia()
+        requisito = self._requisito_visual(clip)
+
+        for variante in range(1, 4):
+            destino = (
+                carpeta_segmento
+                / (
+                    f"clip_{posicion_clip:02d}_"
+                    f"cloudflare_v{variante}.jpg"
+                )
+            )
+
+            print(
+                "  Generando imagen documental con Workers AI "
+                f"({variante}/3)..."
+            )
+
+            metadata = generador.generate(
+                clip=clip,
+                destination=destino,
+                variant=variante,
+            )
+
+            lamina = (
+                carpeta_segmento
+                / (
+                    f"verificacion_cloudflare_"
+                    f"{posicion_clip:02d}_{variante}.jpg"
+                )
+            )
+
+            try:
+                verificacion = self.verificador_visual.seleccionar(
+                    imagenes=[destino],
+                    requisito_visual=requisito,
+                    lamina_temporal=lamina,
+                )
+
+            except Exception as error:
+                if self._registrar_error_fatal(error):
+                    self.detener_recoleccion = False
+                    self.motivo_detencion = ""
+
+                print(
+                    "  Gemini no pudo verificar la imagen IA; "
+                    "se usara CLIP local."
+                )
+
+                verificacion = (
+                    self.verificador_visual_local.seleccionar(
+                        imagenes=[destino],
+                        requisito_visual=requisito,
+                        lamina_temporal=lamina,
+                    )
+                )
+
+            if (
+                int(verificacion.get("seleccion", 0)) == 0
+                and verificacion.get("verificador") != "CLIP local"
+            ):
+                print(
+                    "  Gemini rechazo la imagen IA; "
+                    "CLIP local realizara una segunda revision."
+                )
+
+                verificacion_local = (
+                    self.verificador_visual_local.seleccionar(
+                        imagenes=[destino],
+                        requisito_visual=requisito,
+                        lamina_temporal=lamina,
+                    )
+                )
+
+                if bool(verificacion_local.get("aprobada", False)):
+                    verificacion = verificacion_local
+
+            aprobada = (
+                int(verificacion.get("seleccion", 0)) == 1
+                and bool(verificacion.get("aprobada", False))
+            )
+
+            if aprobada:
+                metadata["verificacion_visual"] = verificacion
+                metadata["requisito_visual"] = requisito
+                generador.confirm_cache(
+                    source=destino,
+                    fingerprint=str(metadata["prompt_sha256"]),
+                )
+                print(
+                    "  IMAGEN IA APROBADA: "
+                    f"{verificacion.get('puntaje', 0)}/100"
+                )
+                return destino, metadata
+
+            print(
+                "  IMAGEN IA RECHAZADA: no coincide "
+                "estrictamente con la narracion."
+            )
+            destino.unlink(missing_ok=True)
+
+        return None
 
     def _consultas_clip(
         self,
@@ -629,19 +1046,23 @@ class RecolectorRecursos:
         }
 
         genericas = {
+            "adult",
             "ai",
             "analyzing",
             "animation",
+            "behavior",
             "business",
             "close",
             "closeup",
             "computer",
             "computers",
             "digital",
+            "documentary",
             "footage",
             "future",
             "high",
             "intelligence",
+            "image",
             "man",
             "modern",
             "monitor",
@@ -649,6 +1070,7 @@ class RecolectorRecursos:
             "monitors",
             "people",
             "person",
+            "photo",
             "professional",
             "screen",
             "screens",
@@ -930,6 +1352,9 @@ class RecolectorRecursos:
             "analizando", "con", "de", "del",
             "en", "la", "las", "los", "para",
             "por", "una", "uno", "y",
+            "adult", "behavior", "documentary", "footage",
+            "image", "man", "people", "person", "photo",
+            "real", "stock", "video", "woman",
         }
 
         resultado: list[str] = []
@@ -972,6 +1397,60 @@ class RecolectorRecursos:
             )
 
             conjunto = set(palabras)
+
+            if (
+                "deepfake" in conjunto
+                or "deepfakes" in conjunto
+            ):
+                agregar("deepfake face comparison forensics")
+                agregar("video manipulation forensic analysis")
+
+            if (
+                "authenticity" in conjunto
+                or "autenticidad" in conjunto
+                or "forensics" in conjunto
+                or "forense" in conjunto
+            ):
+                agregar("digital forensics video authentication")
+                agregar("media authenticity forensic analyst")
+
+            if (
+                "political" in conjunto
+                or "politico" in conjunto
+                or "election" in conjunto
+                or "elecciones" in conjunto
+            ):
+                agregar("political press conference cameras")
+                agregar("election speech news media")
+
+            if (
+                "fraud" in conjunto
+                or "fraude" in conjunto
+                or "scam" in conjunto
+                or "estafa" in conjunto
+            ):
+                agregar("digital fraud investigation")
+                agregar("phone banking scam investigation")
+
+            if (
+                "parliament" in conjunto
+                or "parlamento" in conjunto
+                or "lawmakers" in conjunto
+                or "legisladores" in conjunto
+            ):
+                agregar("lawmakers technology regulation parliament")
+                agregar("parliament debate press cameras")
+
+            if (
+                "videoconference" in conjunto
+                or "videoconferencia" in conjunto
+                or (
+                    "video" in conjunto
+                    and "conference" in conjunto
+                )
+            ):
+                agregar("video conference face camera")
+                agregar("webcam face tracking meeting")
 
             if "tensores" in conjunto or "matriz" in conjunto:
                 agregar("tensor matrix visualization")
@@ -1505,6 +1984,33 @@ class RecolectorRecursos:
 
         return carpeta / f"selecciones_lote_{huella}.json"
 
+    def _verificacion_cache_estricta(
+        self,
+        guardado: dict[str, Any],
+    ) -> bool:
+        """Impide reutilizar decisiones degradadas de versiones anteriores."""
+        recurso = guardado.get("recurso")
+        verificacion = guardado.get("verificacion")
+
+        if not isinstance(recurso, dict):
+            return False
+
+        if not isinstance(verificacion, dict):
+            return False
+
+        return (
+            int(verificacion.get("seleccion", 0)) > 0
+            and int(verificacion.get("puntaje", 0))
+            >= self.verificador_visual.umbral
+            and bool(verificacion.get("aprobada", False))
+            and bool(verificacion.get("cumple_concepto", False))
+            and bool(verificacion.get("cumple_obligatorios", False))
+            and not bool(verificacion.get("viola_prohibidos", True))
+            and not bool(
+                verificacion.get("verificacion_degradada", False)
+            )
+        )
+
     def _guardar_cache_selecciones(
         self,
         ruta_cache: Path,
@@ -1565,6 +2071,7 @@ class RecolectorRecursos:
             "pexels": 0,
             "wikimedia": 0,
             "pixabay": 0,
+            "openverse": 0,
         }
         fuentes_bloqueadas: set[str] = set()
         consulta_principal = consultas[0]
@@ -1603,14 +2110,16 @@ class RecolectorRecursos:
         limites_fuente = (
             {
                 "pexels": 1,
-                "wikimedia": 2,
+                "wikimedia": 1,
                 "pixabay": 1,
+                "openverse": 1,
             }
             if concepto_tecnico
             else {
-                "pexels": 2,
+                "pexels": 1,
                 "wikimedia": 1,
                 "pixabay": 1,
+                "openverse": 1,
             }
         )
 
@@ -1701,6 +2210,32 @@ class RecolectorRecursos:
                     f"  AVISO Pixabay: {error}"
                 )
 
+            try:
+                resultados_openverse = (
+                    self.cliente_openverse.buscar_imagenes(
+                        consulta=consulta,
+                    )
+                )
+
+                resultados_por_fuente.append(
+                    (
+                        "openverse",
+                        resultados_openverse,
+                        self.cliente_openverse,
+                    )
+                )
+
+            except Exception as error:
+                if self._registrar_error_fatal(error):
+                    raise RuntimeError(
+                        "DETENER_RECOLECCION: "
+                        f"{error}"
+                    ) from error
+
+                print(
+                    f"  AVISO Openverse: {error}"
+                )
+
             for fuente, resultados, cliente in resultados_por_fuente:
                 if fuente in fuentes_bloqueadas:
                     continue
@@ -1732,7 +2267,7 @@ class RecolectorRecursos:
 
                     minimo = (
                         2
-                        if fuente == "wikimedia"
+                        if fuente in {"wikimedia", "openverse"}
                         else 1
                     )
 
@@ -1746,6 +2281,11 @@ class RecolectorRecursos:
 
                     if recurso is None:
                         continue
+
+                    recurso["_puntaje_textual_local"] = (
+                        puntaje_textual
+                    )
+                    recurso["_consulta_local"] = consulta
 
                     clave = (
                         fuente,
@@ -1811,7 +2351,7 @@ class RecolectorRecursos:
                     recursos.append(recurso)
                     imagenes.append(destino)
 
-                    if fuente == "wikimedia":
+                    if fuente in {"wikimedia", "openverse"}:
                         time.sleep(0.5)
 
                     conteo_fuente[fuente] = (
@@ -1920,7 +2460,10 @@ class RecolectorRecursos:
                     identificador
                 )
 
-                if isinstance(guardado, dict):
+                if (
+                    isinstance(guardado, dict)
+                    and self._verificacion_cache_estricta(guardado)
+                ):
                     recurso = guardado.get(
                         "recurso"
                     )
@@ -1943,6 +2486,12 @@ class RecolectorRecursos:
                     )
 
                 else:
+                    if isinstance(guardado, dict):
+                        selecciones_cache.pop(
+                            identificador,
+                            None,
+                        )
+
                     objetivos.append(
                         (
                             identificador,
@@ -2011,7 +2560,7 @@ class RecolectorRecursos:
                             lamina_temporal=lamina,
                         )
                     )
-                except RuntimeError as error:
+                except (RuntimeError, httpx.TransportError) as error:
                     self._verificacion_visual_remota_desactivada = True
                     resultados = {}
 
@@ -2021,35 +2570,90 @@ class RecolectorRecursos:
                         f"durante esta ejecucion: {error}"
                     )
 
+            if resultados:
+                grupos_rechazados = [
+                    grupo
+                    for grupo in grupos_pendientes
+                    if int(
+                        resultados.get(
+                            str(grupo["id"]),
+                            {},
+                        ).get("seleccion", 0)
+                    )
+                    == 0
+                ]
+
+                if grupos_rechazados:
+                    print(
+                        "  CLIP local revisara los rechazos de Gemini: "
+                        f"{len(grupos_rechazados)} clips."
+                    )
+
+                    try:
+                        resultados_locales = (
+                            self.verificador_visual_local.seleccionar_lote(
+                                grupos=grupos_rechazados,
+                                lamina_temporal=lamina,
+                            )
+                        )
+
+                        for identificador_local, resultado_local in (
+                            resultados_locales.items()
+                        ):
+                            if (
+                                int(resultado_local.get("seleccion", 0)) > 0
+                                and bool(
+                                    resultado_local.get("aprobada", False)
+                                )
+                            ):
+                                resultados[identificador_local] = resultado_local
+
+                    except Exception as error:
+                        print(
+                            "  AVISO: CLIP local no pudo revisar "
+                            f"los rechazos: {error}"
+                        )
+
             if not resultados:
                 print(
-                    "  RESPALDO LOCAL: se utilizara el primer "
-                    "candidato disponible de cada clip."
+                    "  Gemini no esta disponible; "
+                    "verificando las imagenes con CLIP local."
                 )
+
+                try:
+                    resultados = (
+                        self.verificador_visual_local.seleccionar_lote(
+                            grupos=grupos_pendientes,
+                            lamina_temporal=lamina,
+                        )
+                    )
+                except Exception as error:
+                    resultados = {}
+                    print(
+                        "  BLOQUEO ESTRICTO: CLIP local tampoco "
+                        f"esta disponible: {error}"
+                    )
 
                 for grupo_respaldo in grupos_pendientes:
                     identificador_respaldo = str(
                         grupo_respaldo["id"]
                     )
 
-                    recursos_respaldo = metadatos_grupo[
-                        identificador_respaldo
-                    ]["recursos"]
+                    if identificador_respaldo in resultados:
+                        continue
 
-                    resultados[
-                        identificador_respaldo
-                    ] = {
+                    resultados[identificador_respaldo] = {
                         "seleccion": 0,
                         "aprobada": False,
                         "puntaje": 0,
+                        "cumple_concepto": False,
+                        "cumple_obligatorios": False,
+                        "viola_prohibidos": True,
                         "motivo": (
-                            "Verificacion remota no disponible; "
-                            "se prohibe aprobar stock sin validar."
+                            "No se aprobo sin una verificacion visual."
                         ),
-                        "verificacion_degradada": True,
-                        "candidatos_disponibles": len(
-                            recursos_respaldo
-                        ),
+                        "verificacion_degradada": False,
+                        "verificador": "ninguno",
                     }
 
             for grupo in grupos_pendientes:
@@ -2233,8 +2837,10 @@ class RecolectorRecursos:
 
     def _seleccionar_imagen_verificada(
         self,
+        resultados_pexels: list[dict[str, Any]],
         resultados_wikimedia: list[dict[str, Any]],
         resultados_pixabay: list[dict[str, Any]],
+        resultados_openverse: list[dict[str, Any]],
         clip: dict[str, Any],
     ) -> dict[str, Any] | None:
         candidatos: list[
@@ -2258,6 +2864,11 @@ class RecolectorRecursos:
 
         fuentes = [
             (
+                "pexels",
+                resultados_pexels[:3],
+                self.cliente_pexels,
+            ),
+            (
                 "wikimedia",
                 resultados_wikimedia[:3],
                 self.cliente_wikimedia,
@@ -2266,6 +2877,11 @@ class RecolectorRecursos:
                 "pixabay",
                 resultados_pixabay[:3],
                 self.cliente,
+            ),
+            (
+                "openverse",
+                resultados_openverse[:3],
+                self.cliente_openverse,
             ),
         ]
 
@@ -2346,16 +2962,60 @@ class RecolectorRecursos:
 
         except Exception as error:
             if self._registrar_error_fatal(error):
-                raise RuntimeError(
-                    "DETENER_RECOLECCION: "
-                    f"{error}"
-                ) from error
+                self.detener_recoleccion = False
+                self.motivo_detencion = ""
 
             print(
-                "  AVISO verificaci?n Gemini: "
-                f"{error}"
+                "  AVISO verificacion Gemini: "
+                f"{error}. Se usara CLIP local."
             )
-            return None
+
+            try:
+                verificacion = (
+                    self.verificador_visual_local.seleccionar(
+                        imagenes=[
+                            candidato[1]
+                            for candidato in candidatos
+                        ],
+                        requisito_visual=requisito,
+                        lamina_temporal=lamina,
+                    )
+                )
+            except Exception as error_local:
+                print(
+                    "  BLOQUEO ESTRICTO: CLIP local no pudo "
+                    f"verificar las imagenes: {error_local}"
+                )
+                return None
+
+        if (
+            int(verificacion.get("seleccion", 0)) == 0
+            and verificacion.get("verificador") != "CLIP local"
+        ):
+            print(
+                "  Gemini rechazo todas las candidatas; "
+                "CLIP local realizara una segunda revision."
+            )
+
+            try:
+                verificacion_local = (
+                    self.verificador_visual_local.seleccionar(
+                        imagenes=[
+                            candidato[1]
+                            for candidato in candidatos
+                        ],
+                        requisito_visual=requisito,
+                        lamina_temporal=lamina,
+                    )
+                )
+
+                if bool(verificacion_local.get("aprobada", False)):
+                    verificacion = verificacion_local
+            except Exception as error_local:
+                print(
+                    "  AVISO: CLIP local no pudo realizar "
+                    f"la segunda revision: {error_local}"
+                )
 
         seleccion = int(
             verificacion.get(
@@ -2380,7 +3040,8 @@ class RecolectorRecursos:
         ] = verificacion
 
         print(
-            "  Imagen aprobada por Gemini: "
+            "  Imagen aprobada por "
+            f"{verificacion.get('verificador', 'Gemini')}: "
             f"{verificacion.get('puntaje', 0)}/100"
         )
 
@@ -2473,6 +3134,23 @@ class RecolectorRecursos:
                 continue
 
             try:
+                resultados_pexels = (
+                    self.cliente_pexels.buscar_imagenes(
+                        consulta=consulta,
+                    )
+                )
+
+            except Exception as error:
+                if self._registrar_error_fatal(error):
+                    raise RuntimeError(
+                        "DETENER_RECOLECCION: "
+                        f"{error}"
+                    ) from error
+
+                print("  AVISO Pexels: " f"{error}")
+                resultados_pexels = []
+
+            try:
                 resultados_wikimedia = (
                     self.cliente_wikimedia.buscar_imagenes(
                         consulta=consulta,
@@ -2512,13 +3190,39 @@ class RecolectorRecursos:
                 )
                 resultados_pixabay = []
 
+            try:
+                resultados_openverse = (
+                    self.cliente_openverse.buscar_imagenes(
+                        consulta=consulta,
+                    )
+                )
+
+            except Exception as error:
+                if self._registrar_error_fatal(error):
+                    raise RuntimeError(
+                        "DETENER_RECOLECCION: "
+                        f"{error}"
+                    ) from error
+
+                print(
+                    "  AVISO Openverse: "
+                    f"{error}"
+                )
+                resultados_openverse = []
+
             recurso = (
                 self._seleccionar_imagen_verificada(
+                    resultados_pexels=(
+                        resultados_pexels
+                    ),
                     resultados_wikimedia=(
                         resultados_wikimedia
                     ),
                     resultados_pixabay=(
                         resultados_pixabay
+                    ),
+                    resultados_openverse=(
+                        resultados_openverse
                     ),
                     clip=clip,
                 )
@@ -2534,10 +3238,16 @@ class RecolectorRecursos:
         contenido_plan: dict[str, Any],
         ruta_plan: Path,
         limite: int = 6,
+        channel_slug: str = "nexon_ia",
     ) -> dict[str, Any]:
         """Descarga recursos del plan visual."""
         plan = contenido_plan["plan_visual"]
         segmentos = plan["segmentos"]
+
+        self._cargar_recursos_historicos(
+            channel_slug=channel_slug,
+            titulo_video=str(plan.get("titulo", "")),
+        )
 
         self._preparar_selecciones_lote(
             contenido_plan=contenido_plan,
@@ -2563,7 +3273,13 @@ class RecolectorRecursos:
         elementos: list[dict[str, Any]] = []
 
         descargados = 0
+        descargados_stock = 0
+        generados_ia = 0
+        reutilizados_clip = 0
+        reutilizados_historicos = 0
         pendientes = 0
+        sin_recurso = 0
+        pendientes_cuota_ia = 0
         omitidos = 0
         errores = 0
 
@@ -2643,6 +3359,26 @@ class RecolectorRecursos:
                         "texto_narrado",
                         "",
                     ),
+                    "concepto_central": clip.get(
+                        "concepto_central",
+                        "",
+                    ),
+                    "criterios_obligatorios": clip.get(
+                        "criterios_obligatorios",
+                        [],
+                    ),
+                    "elementos_prohibidos": clip.get(
+                        "elementos_prohibidos",
+                        [],
+                    ),
+                    "continuidad_id": clip.get(
+                        "continuidad_id",
+                        "",
+                    ),
+                    "consultas_alternativas": clip.get(
+                        "consultas_alternativas",
+                        [],
+                    ),
                     "inicio_segundos": clip.get(
                         "inicio_segundos",
                         0,
@@ -2715,9 +3451,98 @@ class RecolectorRecursos:
                     )
 
                     if recurso is None:
-                        raise RuntimeError(
-                            "No se encontró un resultado adecuado."
+                        reutilizado = self._reutilizar_recurso_aprobado(
+                            clip=clip,
+                            segmento_indice=indice_segmento,
+                            titulo_segmento=titulo_segmento,
+                            carpeta_segmento=carpeta_segmento,
+                            posicion_clip=posicion_clip,
                         )
+
+                        if reutilizado is not None:
+                            destino_reutilizado, metadata_reutilizacion = (
+                                reutilizado
+                            )
+                            descargados += 1
+                            reutilizados_clip += 1
+                            if bool(
+                                metadata_reutilizacion.get(
+                                    "coleccion_historica",
+                                    False,
+                                )
+                            ):
+                                reutilizados_historicos += 1
+                            elementos.append(
+                                {
+                                    **base,
+                                    "estado": "descargado",
+                                    "fuente": "reutilizacion_clip_local",
+                                    "consulta": "narracion_directa",
+                                    "archivo": str(
+                                        destino_reutilizado.resolve()
+                                    ),
+                                    "reutilizacion": metadata_reutilizacion,
+                                }
+                            )
+                            print(
+                                "  OK REUTILIZADO: "
+                                f"{destino_reutilizado.name}"
+                            )
+                            continue
+
+                        if generados_ia >= self.maximo_imagenes_ia:
+                            raise RuntimeError(
+                                "Se alcanzo el limite editorial de "
+                                f"{self.maximo_imagenes_ia} imagenes IA "
+                                "para este documental."
+                            )
+
+                        if self.cuota_imagen_ia_agotada:
+                            raise CuotaImagenIAAgotada(
+                                "Workers AI sigue sin cuota disponible; "
+                                "se continuara revisando el resto del plan."
+                            )
+
+                        resultado_ia = (
+                            self._generar_imagen_ia_verificada(
+                                clip=clip,
+                                carpeta_segmento=carpeta_segmento,
+                                posicion_clip=posicion_clip,
+                            )
+                        )
+
+                        if resultado_ia is None:
+                            raise RuntimeError(
+                                "Workers AI no genero una candidata "
+                                "que superara la verificacion visual."
+                            )
+
+                        destino_ia, metadata_ia = resultado_ia
+                        descargados += 1
+                        generados_ia += 1
+
+                        elementos.append(
+                            {
+                                **base,
+                                "estado": "descargado",
+                                "fuente": "cloudflare_workers_ai",
+                                "consulta": "narracion_directa",
+                                "archivo": str(destino_ia.resolve()),
+                                "licencia": (
+                                    "Imagen ilustrativa generada por IA"
+                                ),
+                                "generacion_ia": metadata_ia,
+                            }
+                        )
+
+                        self._registrar_recurso_reutilizable(
+                            segmento_indice=indice_segmento,
+                            archivo=destino_ia,
+                            fuente="cloudflare_workers_ai",
+                        )
+
+                        print(f"  OK IA: {destino_ia.name}")
+                        continue
 
                     fuente = str(
                         recurso.get(
@@ -2750,6 +3575,7 @@ class RecolectorRecursos:
                         "wikimedia": self.cliente_wikimedia,
                         "pexels": self.cliente_pexels,
                         "pixabay": self.cliente,
+                        "openverse": self.cliente_openverse,
                     }
 
                     cliente_descarga = (
@@ -2810,6 +3636,7 @@ class RecolectorRecursos:
                         raise ultimo_error_descarga
 
                     descargados += 1
+                    descargados_stock += 1
 
                     elementos.append(
                         {
@@ -2832,11 +3659,37 @@ class RecolectorRecursos:
                         }
                     )
 
+                    self._registrar_recurso_reutilizable(
+                        segmento_indice=indice_segmento,
+                        archivo=destino,
+                        fuente=fuente,
+                    )
+
                     print(
                         f"  OK: {nombre_archivo}"
                     )
 
                     time.sleep(0.25)
+
+                except CuotaImagenIAAgotada as error:
+                    pendientes_cuota_ia += 1
+                    self.cuota_imagen_ia_agotada = True
+                    self.detener_recoleccion = False
+                    self.motivo_detencion = str(error)
+
+                    elementos.append(
+                        {
+                            **base,
+                            "estado": "pendiente_cuota_imagen_ia",
+                            "motivo": str(error),
+                        }
+                    )
+
+                    print(f"  PAUSA SEGURA: {error}")
+                    print(
+                        "  CONTINUANDO: se buscaran recursos de stock "
+                        "y reutilizaciones CLIP para los clips restantes."
+                    )
 
                 except Exception as error:
                     error_fatal = (
@@ -2861,25 +3714,24 @@ class RecolectorRecursos:
                         )
 
                     else:
-                        pendientes += 1
+                        sin_recurso += 1
 
                         elementos.append(
                             {
                                 **base,
-                                "tipo_recurso": "grafico",
-                                "estado": "pendiente_generacion",
+                                "estado": "pendiente_sin_recurso",
                                 "motivo": (
                                     "Recurso de stock no disponible. "
-                                    "Se generar? autom?ticamente "
-                                    "una alternativa visual local."
+                                    "El control editorial prohibe "
+                                    "sustituirlo por un grafico."
                                 ),
                                 "error_original": str(error),
                             }
                         )
 
                         print(
-                            "  RESPALDO LOCAL: "
-                            "se generar? un gr?fico relacionado."
+                            "  PENDIENTE: no se encontro una imagen "
+                            "o video que coincida con la narracion."
                         )
 
                     if self.detener_recoleccion:
@@ -2897,10 +3749,32 @@ class RecolectorRecursos:
             if self.detener_recoleccion:
                 break
 
+        cobertura_contextual = self._completar_cobertura_segmentos(
+            elementos
+        )
+        descargados = sum(
+            1
+            for elemento in elementos
+            if str(elemento.get("estado", "")) == "descargado"
+        )
+        pendientes_cuota_ia = sum(
+            1
+            for elemento in elementos
+            if str(elemento.get("estado", ""))
+            == "pendiente_cuota_imagen_ia"
+        )
+        sin_recurso = sum(
+            1
+            for elemento in elementos
+            if str(elemento.get("estado", ""))
+            == "pendiente_sin_recurso"
+        )
+
         manifiesto = {
             "generado_en": datetime.now()
             .astimezone()
             .isoformat(timespec="seconds"),
+            "channel_slug": channel_slug,
             "titulo": plan.get(
                 "titulo",
                 "Sin título",
@@ -2913,9 +3787,21 @@ class RecolectorRecursos:
             ),
             "resumen": {
                 "descargados": descargados,
+                "descargados_stock": descargados_stock,
+                "generados_ia": generados_ia,
+                "reutilizados_clip_local": reutilizados_clip,
+                "reutilizados_colecciones_anteriores": (
+                    reutilizados_historicos
+                ),
+                "coberturas_contextuales": cobertura_contextual,
+                "maximo_imagenes_ia": self.maximo_imagenes_ia,
                 "pendientes_generacion": pendientes,
+                "pendientes_sin_recurso": sin_recurso,
+                "pendientes_cuota_imagen_ia": pendientes_cuota_ia,
                 "omitidos_por_limite": omitidos,
                 "errores": errores,
+                "recoleccion_detenida": self.detener_recoleccion,
+                "motivo_detencion": self.motivo_detencion,
                 "total_elementos": len(elementos),
             },
             "elementos": elementos,

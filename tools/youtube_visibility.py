@@ -1,14 +1,16 @@
-﻿from pathlib import Path
+from __future__ import annotations
+
+import argparse
 import sys
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from youtube_channels import (
+    CHANNEL_CHOICES,
+    DEFAULT_CHANNEL,
+    build_youtube_client,
+)
 
-ROOT = Path(__file__).resolve().parents[1]
-TOKEN_FILE = ROOT / "config" / "youtube" / "token.json"
 
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
@@ -16,74 +18,41 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
 
-VALID = {"private", "unlisted", "public"}
 
-
-def credentials():
-    creds = Credentials.from_authorized_user_file(
-        str(TOKEN_FILE),
-        SCOPES,
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("video_id")
+    parser.add_argument(
+        "privacy",
+        choices=("private", "unlisted", "public"),
     )
-
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        TOKEN_FILE.write_text(
-            creds.to_json(),
-            encoding="utf-8",
-        )
-
-    return creds
-
-
-def main():
-    if len(sys.argv) != 3:
-        print(
-            "Uso: python youtube_visibility.py "
-            "VIDEO_ID public|private|unlisted"
-        )
-        return 1
-
-    video_id = sys.argv[1]
-    new_privacy = sys.argv[2].lower()
-
-    if new_privacy not in VALID:
-        raise ValueError(
-            "Usa public, private o unlisted."
-        )
-
-    youtube = build(
-        "youtube",
-        "v3",
-        credentials=credentials(),
-        cache_discovery=False,
+    parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
     )
+    args = parser.parse_args()
+
+    youtube, identity = build_youtube_client(args.canal, SCOPES)
+    print(f"Canal verificado: {identity['channel_title']}")
 
     result = youtube.videos().list(
         part="status,snippet",
-        id=video_id,
+        id=args.video_id,
     ).execute()
-
     items = result.get("items", [])
 
     if not items:
         raise RuntimeError(
-            "No se encontró el video o no pertenece a esta cuenta."
+            "No se encontro el video o no pertenece al canal seleccionado."
         )
 
     video = items[0]
     old_status = video["status"]
-    title = video["snippet"]["title"]
+    print("Video:", video["snippet"]["title"])
+    print("Visibilidad actual:", old_status.get("privacyStatus"))
 
-    print("Video:", title)
-    print(
-        "Visibilidad actual:",
-        old_status.get("privacyStatus")
-    )
-
-    status = {
-        "privacyStatus": new_privacy,
-    }
-
+    status = {"privacyStatus": args.privacy}
     for field in (
         "embeddable",
         "license",
@@ -96,24 +65,13 @@ def main():
 
     response = youtube.videos().update(
         part="status",
-        body={
-            "id": video_id,
-            "status": status,
-        },
+        body={"id": args.video_id, "status": status},
     ).execute()
 
-    print()
     print("VISIBILIDAD ACTUALIZADA")
-    print("Video ID:", video_id)
-    print(
-        "Nueva visibilidad:",
-        response["status"]["privacyStatus"],
-    )
-    print(
-        "Dirección:",
-        f"https://youtu.be/{video_id}",
-    )
-
+    print("Video ID:", args.video_id)
+    print("Nueva visibilidad:", response["status"]["privacyStatus"])
+    print("Direccion:", f"https://youtu.be/{args.video_id}")
     return 0
 
 
@@ -121,14 +79,8 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except HttpError as exc:
-        print(
-            f"Error de YouTube API: {exc}",
-            file=sys.stderr,
-        )
+        print(f"Error de YouTube API: {exc}", file=sys.stderr)
         raise SystemExit(1)
     except Exception as exc:
-        print(
-            f"Error: {exc}",
-            file=sys.stderr,
-        )
+        print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(1)

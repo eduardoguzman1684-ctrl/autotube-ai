@@ -9,6 +9,15 @@ from pathlib import Path
 from typing import Any
 
 from autotube.ai.gemini_client import GeminiClient
+from autotube.content.channel_profiles import (
+    DEFAULT_CHANNEL,
+    channel_profile,
+    default_niche,
+    editorial_prompt,
+    normalize_channel_slug,
+    resolve_niche,
+    strategy_profile_path,
+)
 from autotube.content.youtube_trends import (
     InvestigadorTendenciasYouTube,
     ordenar_ideas_por_tendencia,
@@ -16,11 +25,7 @@ from autotube.content.youtube_trends import (
 )
 
 
-NICHO_PREDETERMINADO = (
-    "documentales de divulgacion sobre inteligencia artificial, "
-    "su historia, funcionamiento, avances, innovaciones, aplicaciones, "
-    "impacto social, riesgos, etica y futuro"
-)
+NICHO_PREDETERMINADO = default_niche(DEFAULT_CHANNEL)
 
 
 IDEAS_SCHEMA: dict[str, Any] = {
@@ -320,6 +325,7 @@ def resumen_guion(
 def cargar_historial_guiones(
     data_dir: Path | None,
     limite: int = 20,
+    channel_slug: str = DEFAULT_CHANNEL,
 ) -> list[dict[str, str]]:
     """Carga t?tulos realmente convertidos en guiones."""
     if data_dir is None:
@@ -341,6 +347,7 @@ def cargar_historial_guiones(
 
     historial: list[dict[str, str]] = []
     titulos_vistos: set[str] = set()
+    channel_slug = normalize_channel_slug(channel_slug)
 
     for ruta in archivos:
         try:
@@ -350,6 +357,18 @@ def cargar_historial_guiones(
                 )
             )
         except Exception:
+            continue
+
+        script_channel = normalize_channel_slug(
+            str(
+                contenido.get(
+                    "channel_slug",
+                    DEFAULT_CHANNEL,
+                )
+            )
+        )
+
+        if script_channel != channel_slug:
             continue
 
         titulo, resumen = resumen_guion(
@@ -692,6 +711,7 @@ def filtrar_ideas_repetidas(
 
 def cargar_contexto_estrategico(
     data_dir: Path | None,
+    channel_slug: str = DEFAULT_CHANNEL,
 ) -> str:
     """Carga aprendizaje del canal sin impedir generar ideas."""
     predeterminado = (
@@ -703,10 +723,9 @@ def cargar_contexto_estrategico(
     if data_dir is None:
         return predeterminado
 
-    ruta_perfil = (
-        Path(data_dir)
-        / "analytics"
-        / "strategy_profile.json"
+    ruta_perfil = strategy_profile_path(
+        Path(data_dir),
+        channel_slug,
     )
 
     if not ruta_perfil.is_file():
@@ -763,9 +782,12 @@ class GeneradorIdeas:
         data_dir: Path | None = None,
         youtube_api_key: str | None = None,
         region_tendencias: str = "MX",
+        channel_slug: str = DEFAULT_CHANNEL,
     ) -> dict[str, Any]:
         """Genera ideas nuevas evitando temas ya producidos."""
-        nicho_limpio = nicho.strip()
+        channel_slug = normalize_channel_slug(channel_slug)
+        profile = channel_profile(channel_slug)
+        nicho_limpio = resolve_niche(channel_slug, nicho)
         idioma_limpio = idioma.strip()
 
         if not nicho_limpio:
@@ -780,6 +802,7 @@ class GeneradorIdeas:
 
         historial = cargar_historial_guiones(
             data_dir=data_dir,
+            channel_slug=channel_slug,
         )
 
         historial_prompt = "\n".join(
@@ -824,15 +847,20 @@ class GeneradorIdeas:
 
         contexto_estrategico = (
             cargar_contexto_estrategico(
-                data_dir
+                data_dir,
+                channel_slug,
             )
+        )
+
+        contexto_editorial = editorial_prompt(
+            channel_slug
         )
 
         prompt = f"""
 Actua como director editorial y estratega de documentales para YouTube.
 
-CANAL:
-NEXON IA.
+PERFIL DEL CANAL:
+{contexto_editorial}
 
 NICHO:
 {nicho_limpio}
@@ -841,7 +869,7 @@ IDIOMA:
 {idioma_limpio}
 
 Genera exactamente {cantidad_candidatos} ideas candidatas para
-documentales originales sobre inteligencia artificial.
+videos documentales originales que pertenezcan estrictamente al nicho.
 
 VIDEOS O GUIONES YA SELECCIONADOS:
 {historial_prompt}
@@ -854,33 +882,9 @@ APRENDIZAJE DEL RENDIMIENTO REAL:
 
 OBJETIVO EDITORIAL:
 
-El canal explica la inteligencia artificial al publico general mediante
-documentales narrativos, educativos, rigurosos y visualmente atractivos.
-
-TEMAS PERMITIDOS:
-
-- que es la inteligencia artificial y como funciona;
-- historia y evolucion de la inteligencia artificial;
-- grandes avances, descubrimientos e innovaciones;
-- inteligencia artificial generativa;
-- IA en medicina, ciencia, educacion, industria y sociedad;
-- robots, sistemas autonomos y computacion avanzada;
-- riesgos, privacidad, sesgos, regulacion y etica;
-- impacto laboral, economico, cultural y geopolitico;
-- carrera internacional por el liderazgo en IA;
-- escenarios futuros de la inteligencia artificial.
-
-TEMAS PROHIBIDOS:
-
-- tutoriales;
-- instalaciones;
-- configuraciones;
-- instrucciones paso a paso;
-- automatizaciones;
-- guias para usar programas;
-- recorridos por interfaces;
-- videos centrados en botones, cuentas o inicios de sesion;
-- temas que necesiten capturas de pantalla para comprenderse.
+Respeta el perfil del canal y el nicho recibido. No traslades temas,
+marcas, vocabulario ni tendencias de otro canal. El contenido debe ser
+educativo, riguroso, humano y visualmente atractivo.
 
 Para cada idea proporciona:
 
@@ -895,8 +899,8 @@ Para cada idea proporciona:
 REGLAS:
 
 1. Cada idea debe poder ilustrarse con videos de stock, imagenes,
-   archivos historicos, laboratorios, ciudades, personas, robots,
-   centros de datos, naturaleza, ciencia, graficos y texto animado.
+   personas, situaciones cotidianas, lugares, archivos, graficos
+   y texto animado relacionados realmente con el tema.
 2. No propongas temas que requieran mostrar una instalacion o interfaz.
 3. No repitas temas incluidos en el historial.
 4. Prioriza relevancia, curiosidad, utilidad publica y retencion.
@@ -910,6 +914,11 @@ REGLAS:
 9. La primera idea debe ser la mejor candidata para producirse
    automaticamente.
 10. Devuelve solamente el JSON solicitado.
+11. Para CogniViva, evita que inteligencia artificial, tecnologia,
+    robots o automatizacion sean el tema central, salvo que aparezcan
+    expresamente en el NICHO solicitado.
+12. En psicologia, informa y educa sin diagnosticar, prescribir,
+    prometer curas ni sustituir ayuda profesional.
 """.strip()
 
         respuesta = (
@@ -980,6 +989,8 @@ REGLAS:
             .isoformat(
                 timespec="seconds"
             ),
+            "channel_slug": channel_slug,
+            "channel_name": profile["display_name"],
             "nicho": nicho_limpio,
             "idioma": idioma_limpio,
             "modelo": (

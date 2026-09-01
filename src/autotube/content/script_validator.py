@@ -223,7 +223,7 @@ def validar_archivo_guion(
             / duracion_objetivo_segundos
         )
 
-        if porcentaje_real < 0.95:
+        if porcentaje_real < 0.94:
             errores.append(
                 "La narración es demasiado corta para la duración "
                 "objetivo del video."

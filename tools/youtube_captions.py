@@ -1,15 +1,18 @@
-﻿from pathlib import Path
-import sys
+from __future__ import annotations
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
+import argparse
+import sys
+from pathlib import Path
+
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
+from youtube_channels import (
+    CHANNEL_CHOICES,
+    DEFAULT_CHANNEL,
+    build_youtube_client,
+)
 
-ROOT = Path(__file__).resolve().parents[1]
-TOKEN_FILE = ROOT / "config" / "youtube" / "token.json"
 
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
@@ -18,94 +21,62 @@ SCOPES = [
 ]
 
 
-def get_credentials():
-    credentials = Credentials.from_authorized_user_file(
-        str(TOKEN_FILE),
-        SCOPES,
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("video_id")
+    parser.add_argument("archivo_srt", type=Path)
+    parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
     )
+    args = parser.parse_args()
 
-    if credentials.expired and credentials.refresh_token:
-        credentials.refresh(Request())
+    srt_path = args.archivo_srt.expanduser().resolve()
 
-        TOKEN_FILE.write_text(
-            credentials.to_json(),
-            encoding="utf-8",
-        )
+    if not srt_path.is_file():
+        raise FileNotFoundError(f"No existe el SRT: {srt_path}")
 
-    return credentials
-
-
-def main():
-    if len(sys.argv) != 3:
-        print(
-            "Uso: python youtube_captions.py VIDEO_ID ARCHIVO_SRT"
-        )
-        return 1
-
-    video_id = sys.argv[1]
-    srt_path = Path(sys.argv[2]).resolve()
-
-    if not srt_path.exists():
-        raise FileNotFoundError(
-            f"No existe el SRT: {srt_path}"
-        )
-
-    youtube = build(
-        "youtube",
-        "v3",
-        credentials=get_credentials(),
-        cache_discovery=False,
-    )
+    youtube, identity = build_youtube_client(args.canal, SCOPES)
+    print(f"Canal verificado: {identity['channel_title']}")
 
     existing = youtube.captions().list(
         part="snippet",
-        videoId=video_id,
+        videoId=args.video_id,
     ).execute()
 
     for track in existing.get("items", []):
         snippet = track.get("snippet", {})
-
         if (
             snippet.get("language") == "es"
             and snippet.get("name") == "Español"
         ):
-            print(
-                "Eliminando pista anterior:",
-                track["id"],
-            )
-
-            youtube.captions().delete(
-                id=track["id"],
-            ).execute()
+            print("Eliminando pista anterior:", track["id"])
+            youtube.captions().delete(id=track["id"]).execute()
 
     body = {
         "snippet": {
-            "videoId": video_id,
+            "videoId": args.video_id,
             "language": "es",
             "name": "Español",
             "isDraft": False,
         }
     }
-
     media = MediaFileUpload(
         str(srt_path),
         mimetype="application/octet-stream",
         resumable=False,
     )
-
     response = youtube.captions().insert(
         part="snippet",
         body=body,
         media_body=media,
     ).execute()
 
-    print()
-    print("SUBTÍTULOS SUBIDOS CORRECTAMENTE")
-    print("Video ID:", video_id)
+    print("SUBTITULOS SUBIDOS CORRECTAMENTE")
+    print("Video ID:", args.video_id)
     print("Caption ID:", response.get("id"))
-    print("Idioma: Español")
     print("Archivo:", srt_path)
-
     return 0
 
 
@@ -113,14 +84,8 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except HttpError as exc:
-        print(
-            f"Error de YouTube API: {exc}",
-            file=sys.stderr,
-        )
+        print(f"Error de YouTube API: {exc}", file=sys.stderr)
         raise SystemExit(1)
     except Exception as exc:
-        print(
-            f"Error: {exc}",
-            file=sys.stderr,
-        )
+        print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(1)

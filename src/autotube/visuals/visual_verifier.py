@@ -60,8 +60,7 @@ class VerificadorVisualGemini:
 
                 except (
                     errors.ServerError,
-                    httpx.TimeoutException,
-                    httpx.ConnectError,
+                    httpx.TransportError,
                 ) as error:
                     ultimo_error = error
 
@@ -77,13 +76,13 @@ class VerificadorVisualGemini:
                             )
                         elif isinstance(
                             error,
-                            httpx.ConnectError,
+                            httpx.TransportError,
                         ):
                             motivo = (
-                                "present? un error de conexi?n"
+                                "presento un error temporal de transporte"
                             )
                         else:
-                            motivo = "est? saturado"
+                            motivo = "esta saturado"
 
                         print(
                             f"  Gemini {motivo}. "

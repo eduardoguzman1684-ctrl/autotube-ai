@@ -10,6 +10,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from autotube.operations.channel_runtime import (
+    migrate_legacy_pipeline_state,
+    newest_pipeline_state,
+)
+
 
 class CentroControlAutoTube:
     """Consolida el estado operativo local del proyecto."""
@@ -160,10 +165,11 @@ class CentroControlAutoTube:
     def _estado_pipeline(
         self,
     ) -> dict[str, Any]:
-        ruta = (
+        migrate_legacy_pipeline_state(
             self.project_root
-            / "data"
-            / "pipeline_state.json"
+        )
+        ruta = newest_pipeline_state(
+            self.project_root
         )
 
         datos = self._leer_json(
@@ -217,6 +223,23 @@ class CentroControlAutoTube:
 
         return {
             "archivo": str(ruta),
+            "canal": str(
+                datos.get(
+                    "parametros",
+                    {},
+                ).get(
+                    "canal",
+                    "",
+                )
+                if isinstance(
+                    datos.get(
+                        "parametros",
+                        {},
+                    ),
+                    dict,
+                )
+                else ""
+            ),
             "existe": ruta.is_file(),
             "actualizado_en": self._fecha_archivo(
                 ruta

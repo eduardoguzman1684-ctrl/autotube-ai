@@ -8,16 +8,27 @@ import unicodedata
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
+from autotube.content.channel_profiles import (
+    DEFAULT_CHANNEL,
+    channel_profile,
+    normalize_channel_slug,
+)
 
 
 class GeneradorMiniaturaYouTube:
-    """Crea automáticamente una miniatura 1280x720 para NEXON IA."""
+    """Crea una miniatura 1280x720 con la marca del canal elegido."""
 
     ANCHO = 1280
     ALTO = 720
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(
+        self,
+        project_root: Path,
+        channel_slug: str = DEFAULT_CHANNEL,
+    ) -> None:
         self.project_root = Path(project_root)
+        self.channel_slug = normalize_channel_slug(channel_slug)
+        self.profile = channel_profile(self.channel_slug)
 
     def _latest(self, pattern: str) -> Path:
         archivos = [
@@ -265,7 +276,26 @@ class GeneradorMiniaturaYouTube:
     ) -> tuple[Path, bool]:
         """Genera la miniatura principal o una variante experimental."""
         metadata = self._metadata()
+        metadata_channel = normalize_channel_slug(
+            str(
+                metadata.get(
+                    "channel_slug",
+                    DEFAULT_CHANNEL,
+                )
+            )
+        )
+
+        if metadata_channel != self.channel_slug:
+            raise RuntimeError(
+                "BLOQUEO EDITORIAL: la metadata pertenece a "
+                f"{metadata_channel}, no a {self.channel_slug}."
+            )
+
         video = self._video()
+        colores = self.profile["colors"]
+        primario = tuple(colores["primary"])
+        acento = tuple(colores["accent"])
+        panel = tuple(colores["panel"])
 
         output_dir = (
             self.project_root
@@ -411,7 +441,7 @@ class GeneradorMiniaturaYouTube:
             ),
         )
 
-        # Identidad NEXON IA.
+        # Identidad visual del canal seleccionado.
         draw_overlay.rounded_rectangle(
             (
                 42,
@@ -420,18 +450,8 @@ class GeneradorMiniaturaYouTube:
                 94,
             ),
             radius=16,
-            fill=(
-                5,
-                10,
-                24,
-                235,
-            ),
-            outline=(
-                0,
-                224,
-                245,
-                245,
-            ),
+            fill=(*panel, 235),
+            outline=(*primario, 245),
             width=3,
         )
 
@@ -444,12 +464,7 @@ class GeneradorMiniaturaYouTube:
                 474,
             ),
             radius=6,
-            fill=(
-                245,
-                45,
-                65,
-                245,
-            ),
+            fill=(*acento, 245),
         )
 
         imagen = Image.alpha_composite(
@@ -471,7 +486,7 @@ class GeneradorMiniaturaYouTube:
                 72,
                 47,
             ),
-            "NEXON IA",
+            self.profile["brand_label"],
             font=fuente_marca,
             fill=(
                 255,
@@ -485,7 +500,7 @@ class GeneradorMiniaturaYouTube:
             if titulo_override is not None
             else metadata.get(
                 "title",
-                "El futuro de la IA",
+                self.profile["default_niche"],
             )
         )
 
@@ -557,9 +572,7 @@ class GeneradorMiniaturaYouTube:
                 font=fuente_gancho,
                 fill=(
                     (
-                        245,
-                        45,
-                        65,
+                        *acento,
                     )
                     if es_ultima
                     else (
@@ -594,11 +607,7 @@ class GeneradorMiniaturaYouTube:
                 554,
             ),
             radius=15,
-            fill=(
-                0,
-                174,
-                214,
-            ),
+            fill=primario,
         )
 
         draw.text(

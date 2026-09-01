@@ -10,16 +10,20 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
+
+from youtube_channels import (
+    CHANNEL_CHOICES,
+    DEFAULT_CHANNEL,
+    build_youtube_client,
+    channel_profile,
+    normalize_channel_slug,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
-TOKEN_FILE = ROOT / "config" / "youtube" / "token.json"
 METADATA_FILE = ROOT / "data" / "publish" / "metadata.json"
 
 SCOPES = [
@@ -51,39 +55,22 @@ def load_metadata() -> dict:
     )
 
 
-def credentials() -> Credentials:
-    if not TOKEN_FILE.exists():
-        raise FileNotFoundError(
-            "No existe token.json. Ejecuta youtube_auth.py."
-        )
-
-    creds = Credentials.from_authorized_user_file(
-        str(TOKEN_FILE),
+def youtube_client(
+    channel_slug: str = DEFAULT_CHANNEL,
+):
+    youtube, _ = build_youtube_client(
+        channel_slug,
         SCOPES,
     )
-
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-
-        TOKEN_FILE.write_text(
-            creds.to_json(),
-            encoding="utf-8",
-        )
-
-    if not creds.valid:
-        raise RuntimeError(
-            "Las credenciales de YouTube no son válidas."
-        )
-
-    return creds
+    return youtube
 
 
-def youtube_client():
-    return build(
-        "youtube",
-        "v3",
-        credentials=credentials(),
-        cache_discovery=False,
+def youtube_client_with_identity(
+    channel_slug: str = DEFAULT_CHANNEL,
+):
+    return build_youtube_client(
+        channel_slug,
+        SCOPES,
     )
 
 
@@ -327,6 +314,7 @@ def calcular_sha256(
 def buscar_publicacion_existente(
     video: Path,
     sha256_video: str,
+    channel_slug: str,
 ) -> tuple[Path | None, dict]:
     """Busca un manifiesto que confirme la subida del mismo video."""
     manifiestos = sorted(
@@ -360,6 +348,16 @@ def buscar_publicacion_existente(
             continue
 
         if not isinstance(datos, dict):
+            continue
+
+        manifest_channel = str(
+            datos.get(
+                "channel_slug",
+                DEFAULT_CHANNEL,
+            )
+        ).strip()
+
+        if manifest_channel != channel_slug:
             continue
 
         video_id = str(
@@ -415,6 +413,8 @@ def save_manifest(
     srt: Path,
     metadata: dict,
     sha256_video: str,
+    channel_slug: str,
+    channel_identity: dict,
 ):
     output = ROOT / "output" / "youtube"
     output.mkdir(parents=True, exist_ok=True)
@@ -425,6 +425,9 @@ def save_manifest(
 
     manifest = {
         "video_id": video_id,
+        "channel_slug": channel_slug,
+        "channel_name": channel_identity["channel_title"],
+        "channel_id": channel_identity["channel_id"],
         "url": f"https://youtu.be/{video_id}",
         "video": str(video),
         "thumbnail": str(thumbnail),
@@ -438,7 +441,7 @@ def save_manifest(
         ),
     }
 
-    path = output / f"publish_{timestamp}.json"
+    path = output / f"publish_{channel_slug}_{timestamp}.json"
 
     path.write_text(
         json.dumps(
@@ -469,9 +472,32 @@ def main() -> int:
         ),
     )
 
+    parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Canal de YouTube que recibira la publicacion.",
+    )
+
     args = parser.parse_args()
+    profile = channel_profile(args.canal)
 
     metadata = load_metadata()
+    metadata_channel = normalize_channel_slug(
+        str(
+            metadata.get(
+                "channel_slug",
+                DEFAULT_CHANNEL,
+            )
+        )
+    )
+
+    if metadata_channel != args.canal:
+        raise RuntimeError(
+            "BLOQUEO DE SEGURIDAD: la produccion preparada pertenece "
+            f"a {metadata_channel}, no a {args.canal}. "
+            "Genera primero contenido para el canal seleccionado."
+        )
 
     video = latest(
         "output/videos/render_*/"
@@ -495,11 +521,12 @@ def main() -> int:
         buscar_publicacion_existente(
             video=video,
             sha256_video=sha256_video,
+            channel_slug=args.canal,
         )
     )
 
     print()
-    print("NEXON IA - PUBLICACIÓN")
+    print(f"{profile['display_name'].upper()} - PUBLICACIÓN")
     print("=" * 50)
     print("Video:", video)
     print("Miniatura:", thumbnail)
@@ -575,7 +602,14 @@ def main() -> int:
         )
         return 0
 
-    youtube = youtube_client()
+    youtube, channel_identity = youtube_client_with_identity(
+        args.canal
+    )
+    print(
+        "Canal verificado:",
+        channel_identity["channel_title"],
+        f"({channel_identity['channel_id']})",
+    )
 
     print()
     print("1/4 Subiendo video...")
@@ -622,6 +656,8 @@ def main() -> int:
         srt,
         metadata,
         sha256_video,
+        args.canal,
+        channel_identity,
     )
 
     print()

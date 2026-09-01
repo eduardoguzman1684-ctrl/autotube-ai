@@ -484,8 +484,9 @@ class CompositorVideo:
         alto: int,
         fps: int,
         movimiento: str,
+        identificador: str = "",
     ) -> str:
-        """Añade movimiento suave a una imagen."""
+        """Añade movimiento contextual, suave y determinista."""
         movimiento_normalizado = movimiento.lower()
 
         sin_movimiento = any(
@@ -515,14 +516,57 @@ class CompositorVideo:
             round(alto * 1.18),
         )
 
+        # La dirección se deriva de un identificador estable. Así se
+        # alternan los recorridos sin depender del azar ni cambiar al
+        # reanudar una producción.
+        firma = sum(
+            (indice + 1) * ord(caracter)
+            for indice, caracter in enumerate(identificador)
+        )
+        direccion_inversa = bool(firma % 2)
+
+        zoom_expression = "min(zoom+0.00038,1.070)"
+        x_expression = "iw/2-(iw/zoom/2)"
+        y_expression = "ih/2-(ih/zoom/2)"
+
+        if "paneo horizontal" in movimiento_normalizado:
+            zoom_expression = "1.060"
+
+            if direccion_inversa:
+                x_expression = (
+                    "max(0,iw-iw/zoom-on*0.35)"
+                )
+            else:
+                x_expression = (
+                    "min(iw-iw/zoom,on*0.35)"
+                )
+
+        elif "desplazamiento vertical" in movimiento_normalizado:
+            zoom_expression = "1.060"
+
+            if direccion_inversa:
+                y_expression = (
+                    "max(0,ih-ih/zoom-on*0.20)"
+                )
+            else:
+                y_expression = (
+                    "min(ih-ih/zoom,on*0.20)"
+                )
+
+        elif "acercamiento" in movimiento_normalizado:
+            zoom_expression = "min(zoom+0.00060,1.100)"
+
+        elif "zoom lento" in movimiento_normalizado:
+            zoom_expression = "min(zoom+0.00038,1.070)"
+
         return (
             f"scale={ancho_preparacion}:{alto_preparacion}:"
             "force_original_aspect_ratio=increase,"
             f"crop={ancho_preparacion}:{alto_preparacion},"
             "zoompan="
-            "z='min(zoom+0.00045,1.075)':"
-            "x='iw/2-(iw/zoom/2)':"
-            "y='ih/2-(ih/zoom/2)':"
+            f"z='{zoom_expression}':"
+            f"x='{x_expression}':"
+            f"y='{y_expression}':"
             "d=1:"
             f"s={ancho}x{alto}:"
             f"fps={fps},"
@@ -564,6 +608,11 @@ class CompositorVideo:
                 alto=alto,
                 fps=fps,
                 movimiento=movimiento,
+                identificador=str(
+                    elemento.get("clip_id")
+                    or elemento.get("id")
+                    or origen
+                ),
             )
 
             entrada = [

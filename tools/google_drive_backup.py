@@ -14,6 +14,13 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
+from autotube.content.channel_profiles import (
+    CHANNEL_CHOICES,
+    DEFAULT_CHANNEL,
+    channel_profile,
+    normalize_channel_slug,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN_FILE = (
@@ -161,22 +168,142 @@ def agregar_archivo(
         archivos.append(ruta_resuelta)
 
 
+def resolver_ruta(
+    ruta: Path | None,
+    patron: str,
+    etiqueta: str,
+) -> Path:
+    candidata = ruta
+
+    if candidata is not None:
+        candidata = candidata.expanduser()
+        if not candidata.is_absolute():
+            candidata = ROOT / candidata
+    else:
+        candidata = ultimo(patron)
+
+    if candidata is None or not candidata.is_file():
+        raise FileNotFoundError(
+            f"No se encontro {etiqueta}: {candidata or patron}"
+        )
+
+    return candidata.resolve()
+
+
+def canal_json(
+    datos: dict[str, Any],
+) -> str:
+    return normalize_channel_slug(
+        str(
+            datos.get(
+                "channel_slug",
+                DEFAULT_CHANNEL,
+            )
+        )
+    )
+
+
+def buscar_publicacion_del_video(
+    video: Path,
+    channel_slug: str,
+) -> tuple[Path | None, dict[str, Any]]:
+    for ruta in sorted(
+        ROOT.glob(
+            "output/youtube/publish_*.json"
+        ),
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    ):
+        datos = cargar_json(ruta)
+
+        try:
+            canal = canal_json(datos)
+        except ValueError:
+            continue
+
+        if canal != channel_slug:
+            continue
+
+        ruta_video = datos.get("video")
+        if not ruta_video:
+            continue
+
+        try:
+            coincide = (
+                Path(str(ruta_video)).resolve()
+                == video.resolve()
+            )
+        except OSError:
+            coincide = False
+
+        if coincide:
+            return ruta, datos
+
+    return None, {}
+
+
 def seleccionar_archivos(
     incluir_video: bool,
+    channel_slug: str = DEFAULT_CHANNEL,
+    video_path: Path | None = None,
+    thumbnail_path: Path | None = None,
+    subtitles_path: Path | None = None,
+    metadata_path: Path | None = None,
+    shorts_manifest_path: Path | None = None,
 ) -> tuple[
     list[Path],
     str,
     dict[str, Any],
 ]:
+    channel_slug = normalize_channel_slug(
+        channel_slug
+    )
+    profile = channel_profile(channel_slug)
     archivos: list[Path] = []
     vistos: set[Path] = set()
 
-    manifiesto_publicacion = ultimo(
-        "output/youtube/publish_*.json"
+    video = resolver_ruta(
+        video_path,
+        (
+            "output/videos/render_*/"
+            "video_final_subtitulado_musica.mp4"
+        ),
+        "el video final",
     )
+    miniatura = resolver_ruta(
+        thumbnail_path,
+        (
+            "output/thumbnails/"
+            "miniatura_youtube_autotube.jpg"
+        ),
+        "la miniatura",
+    )
+    subtitulos = resolver_ruta(
+        subtitles_path,
+        (
+            "output/subtitles/"
+            "subtitulos_*/subtitulos.srt"
+        ),
+        "los subtitulos",
+    )
+    metadata = resolver_ruta(
+        metadata_path,
+        "data/publish/metadata.json",
+        "la metadata",
+    )
+    datos_metadata = cargar_json(metadata)
 
-    publicacion = cargar_json(
-        manifiesto_publicacion
+    if canal_json(datos_metadata) != channel_slug:
+        raise RuntimeError(
+            "BLOQUEO MULTICANAL: la metadata pertenece a "
+            f"{canal_json(datos_metadata)}, no a {channel_slug}."
+        )
+
+    manifiesto_publicacion, publicacion = (
+        buscar_publicacion_del_video(
+            video,
+            channel_slug,
+        )
     )
 
     agregar_archivo(
@@ -185,22 +312,6 @@ def seleccionar_archivos(
         manifiesto_publicacion,
     )
 
-    video = None
-
-    if publicacion.get("video"):
-        video = Path(
-            str(publicacion["video"])
-        )
-
-    if (
-        video is None
-        or not video.is_file()
-    ):
-        video = ultimo(
-            "output/videos/render_*/"
-            "video_final_subtitulado_musica.mp4"
-        )
-
     if incluir_video:
         agregar_archivo(
             archivos,
@@ -208,174 +319,125 @@ def seleccionar_archivos(
             video,
         )
 
-    miniatura = None
-
-    if publicacion.get("thumbnail"):
-        miniatura = Path(
-            str(publicacion["thumbnail"])
-        )
-
-    if (
-        miniatura is None
-        or not miniatura.is_file()
-    ):
-        miniatura = ultimo(
-            "output/thumbnails/"
-            "miniatura_youtube_autotube.jpg"
-        )
-
-    agregar_archivo(
-        archivos,
-        vistos,
+    for ruta in (
         miniatura,
-    )
-
-    subtitulos = None
-
-    if publicacion.get("subtitles"):
-        subtitulos = Path(
-            str(publicacion["subtitles"])
-        )
-
-    if (
-        subtitulos is None
-        or not subtitulos.is_file()
-    ):
-        subtitulos = ultimo(
-            "output/subtitles/"
-            "subtitulos_*/subtitulos.srt"
-        )
-
-    agregar_archivo(
-        archivos,
-        vistos,
         subtitulos,
-    )
-
-    agregar_archivo(
-        archivos,
-        vistos,
-        ROOT
-        / "data"
-        / "publish"
-        / "metadata.json",
-    )
-
-    agregar_archivo(
-        archivos,
-        vistos,
-        ultimo(
-            "data/analytics/"
-            "youtube_analytics_*.json"
-        ),
-    )
-
-    manifiesto_shorts = ultimo(
-        "output/shorts/shorts_*/"
-        "shorts_manifest.json"
-    )
-
-    agregar_archivo(
-        archivos,
-        vistos,
-        manifiesto_shorts,
-    )
-
-    datos_shorts = cargar_json(
-        manifiesto_shorts
-    )
-
-    shorts = datos_shorts.get(
-        "shorts",
-        [],
-    )
-
-    if isinstance(shorts, list):
-        for elemento in shorts:
-            if not isinstance(
-                elemento,
-                dict,
-            ):
-                continue
-
-            archivo = elemento.get(
-                "archivo"
-            )
-
-            if archivo:
-                agregar_archivo(
-                    archivos,
-                    vistos,
-                    Path(str(archivo)),
-                )
-
-    if manifiesto_shorts:
+        metadata,
+    ):
         agregar_archivo(
             archivos,
             vistos,
+            ruta,
+        )
+
+    manifiesto_shorts = None
+
+    if shorts_manifest_path is not None:
+        manifiesto_shorts = resolver_ruta(
+            shorts_manifest_path,
+            "",
+            "el manifiesto de Shorts",
+        )
+        datos_shorts = cargar_json(
+            manifiesto_shorts
+        )
+
+        if canal_json(datos_shorts) != channel_slug:
+            raise RuntimeError(
+                "BLOQUEO MULTICANAL: los Shorts pertenecen a "
+                f"{canal_json(datos_shorts)}, no a {channel_slug}."
+            )
+
+        agregar_archivo(
+            archivos,
+            vistos,
+            manifiesto_shorts,
+        )
+
+        shorts = datos_shorts.get(
+            "shorts",
+            [],
+        )
+
+        if isinstance(shorts, list):
+            for elemento in shorts:
+                if not isinstance(elemento, dict):
+                    continue
+                archivo = elemento.get("archivo")
+                if archivo:
+                    agregar_archivo(
+                        archivos,
+                        vistos,
+                        Path(str(archivo)),
+                    )
+
+        estado_shorts = (
             manifiesto_shorts.parent
-            / "youtube_publish.json",
+            / f"youtube_publish_{channel_slug}.json"
+        )
+        if (
+            channel_slug == DEFAULT_CHANNEL
+            and not estado_shorts.is_file()
+        ):
+            estado_shorts = (
+                manifiesto_shorts.parent
+                / "youtube_publish.json"
+            )
+        agregar_archivo(
+            archivos,
+            vistos,
+            estado_shorts,
         )
 
     titulo = str(
-        publicacion.get(
+        datos_metadata.get(
             "title",
-            "Produccion AutoTube AI",
+            f"Produccion {profile['display_name']}",
         )
+    ).strip()
+    identificador = ""
+    coincidencia = re.search(
+        r"render_(\d{8}_\d{6})",
+        str(video),
     )
 
-    identificador = ""
-
-    if video is not None:
-        coincidencia = re.search(
-            r"render_(\d{8}_\d{6})",
-            str(video),
-        )
-
-        if coincidencia:
-            identificador = (
-                coincidencia.group(1)
-            )
+    if coincidencia:
+        identificador = coincidencia.group(1)
 
     if not identificador:
-        identificador = (
-            datetime.now()
-            .strftime("%Y%m%d_%H%M%S")
+        identificador = datetime.now().strftime(
+            "%Y%m%d_%H%M%S"
         )
 
     nombre_carpeta = limpiar_nombre(
         f"{identificador} - {titulo}",
         limite=110,
     )
-
     contexto = {
+        "channel_slug": channel_slug,
+        "channel_name": profile["display_name"],
         "titulo": titulo,
+        "video": str(video),
+        "metadata": str(metadata),
         "video_id": str(
-            publicacion.get(
-                "video_id",
-                "",
-            )
+            publicacion.get("video_id", "")
         ),
         "youtube_url": str(
-            publicacion.get(
-                "url",
-                "",
-            )
+            publicacion.get("url", "")
         ),
         "manifiesto_publicacion": (
-            str(
-                manifiesto_publicacion
-            )
+            str(manifiesto_publicacion)
             if manifiesto_publicacion
+            else ""
+        ),
+        "manifiesto_shorts": (
+            str(manifiesto_shorts)
+            if manifiesto_shorts
             else ""
         ),
     }
 
-    return (
-        archivos,
-        nombre_carpeta,
-        contexto,
-    )
+    return archivos, nombre_carpeta, contexto
 
 
 def escapar_consulta(
@@ -668,22 +730,57 @@ def main() -> int:
 
     parser.add_argument(
         "--carpeta-raiz",
-        default=(
-            "NEXON IA - AutoTube AI"
-        ),
+        default=None,
         help=(
             "Nombre de la carpeta raiz "
-            "en Google Drive."
+            "en Google Drive. Por defecto usa la del canal."
         ),
     )
 
+    parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Canal propietario de la produccion.",
+    )
+
+    parser.add_argument("--video", type=Path)
+    parser.add_argument("--miniatura", type=Path)
+    parser.add_argument("--subtitulos", type=Path)
+    parser.add_argument("--metadata", type=Path)
+    parser.add_argument(
+        "--manifiesto-shorts",
+        type=Path,
+        default=None,
+    )
+
     args = parser.parse_args()
+    channel_slug = normalize_channel_slug(
+        args.canal
+    )
+    profile = channel_profile(channel_slug)
+    root_folder_name = limpiar_nombre(
+        args.carpeta_raiz
+        or str(
+            profile[
+                "drive_root_folder"
+            ]
+        )
+    )
 
     archivos, nombre_produccion, contexto = (
         seleccionar_archivos(
             incluir_video=(
                 not args.sin_video
-            )
+            ),
+            channel_slug=channel_slug,
+            video_path=args.video,
+            thumbnail_path=args.miniatura,
+            subtitles_path=args.subtitulos,
+            metadata_path=args.metadata,
+            shorts_manifest_path=(
+                args.manifiesto_shorts
+            ),
         )
     )
 
@@ -700,11 +797,19 @@ def main() -> int:
 
     print()
     print(
-        "NEXON IA - RESPALDO EN GOOGLE DRIVE"
+        f"{str(profile['brand_label']).upper()} "
+        "- RESPALDO EN GOOGLE DRIVE"
     )
     print("=" * 64)
     print(
         f"Produccion: {nombre_produccion}"
+    )
+    print(
+        f"Canal: {profile['display_name']} "
+        f"({channel_slug})"
+    )
+    print(
+        f"Carpeta raiz: {root_folder_name}"
     )
     print(
         f"Archivos: {len(archivos)}"
@@ -739,9 +844,7 @@ def main() -> int:
     carpeta_raiz = (
         obtener_o_crear_carpeta(
             drive,
-            limpiar_nombre(
-                args.carpeta_raiz
-            ),
+            root_folder_name,
             "root",
         )
     )
@@ -785,12 +888,18 @@ def main() -> int:
             resultado
         )
 
-    OUTPUT_DIR.mkdir(
+    output_channel_dir = (
+        OUTPUT_DIR
+        / channel_slug
+    )
+    output_channel_dir.mkdir(
         parents=True,
         exist_ok=True,
     )
 
     manifiesto = {
+        "channel_slug": channel_slug,
+        "channel_name": profile["display_name"],
         "generado_en": (
             datetime.now()
             .astimezone()
@@ -831,7 +940,7 @@ def main() -> int:
     }
 
     salida = (
-        OUTPUT_DIR
+        output_channel_dir
         / (
             "backup_"
             + datetime.now().strftime(

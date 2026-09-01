@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -315,14 +316,16 @@ def ajustar_duraciones_clips(
 def crear_bloques_narracion(
     segmento: dict[str, Any],
     inicio_global: float,
-    objetivo_segundos: float = 7.5,
-    minimo_segundos: float = 4.5,
-    maximo_segundos: float = 9.0,
+    objetivo_segundos: float = 6.5,
+    minimo_segundos: float = 3.0,
+    maximo_segundos: float = 10.0,
 ) -> list[dict[str, Any]]:
     """
     Divide la narracion usando limites semanticos y tiempos reales.
 
     Prioriza finales de oracion, preguntas, pausas fuertes y comas.
+    La ventana audiovisual favorece cambios cada 3-10 segundos para
+    mantener el ritmo y conservar la relacion directa con cada frase.
     Solo fuerza un corte interno cuando no existe un limite semantico
     util dentro del intervalo permitido.
     """
@@ -695,6 +698,513 @@ def crear_bloques_narracion(
 
     return bloques
 
+
+def normalizar_texto_busqueda(texto: str) -> str:
+    """Normaliza texto para reglas locales de selección visual."""
+    return "".join(
+        caracter
+        for caracter in unicodedata.normalize("NFKD", texto.lower())
+        if not unicodedata.combining(caracter)
+    )
+
+
+def resumir_concepto(texto: str, limite: int = 14) -> str:
+    """Obtiene una frase breve sin inventar información."""
+    palabras = re.findall(r"\b[\wÁÉÍÓÚÜÑáéíóúüñ'-]+\b", texto)
+    resumen = " ".join(palabras[:limite]).strip()
+    return resumen or "concepto principal de la narración"
+
+
+def narracion_autoriza_grafico(texto: str) -> bool:
+    """Permite gráficos solo cuando el propio texto los necesita."""
+    contenido = normalizar_texto_busqueda(texto)
+    indicadores = (
+        "grafico",
+        "diagrama",
+        "infografia",
+        "tabla de datos",
+        "estadistica",
+        "porcentaje",
+        "mapa de calor",
+        "curva comparativa",
+        "linea de tiempo",
+        "flujo de datos",
+    )
+    return any(indicador in contenido for indicador in indicadores)
+
+
+def es_llamada_accion(texto: str, tipo_segmento: str = "") -> bool:
+    """Detecta una llamada a la acción real, no una introducción."""
+    contenido = normalizar_texto_busqueda(
+        f"{tipo_segmento} {texto}"
+    )
+    indicadores = (
+        "llamada a la accion",
+        "suscrib",
+        "comparte este video",
+        "deja tu comentario",
+        "activa la campana",
+        "dale me gusta",
+    )
+    return any(indicador in contenido for indicador in indicadores)
+
+
+def consulta_invalida_para_canal(
+    consulta: str,
+    nombre_canal: str,
+) -> bool:
+    """Bloquea consultas editoriales pertenecientes a otro canal."""
+    contenido = normalizar_texto_busqueda(consulta)
+    if not contenido:
+        return True
+
+    if normalizar_texto_busqueda(nombre_canal) != "cogniviva":
+        prohibidas = (
+            "psychology",
+            "therapy",
+            "therapist",
+            "counseling",
+            "mental health",
+            "procrastination",
+            "burnout",
+            "self compassion",
+            "psicologia",
+            "terapia",
+            "procrastinacion",
+        )
+        return any(valor in contenido for valor in prohibidas)
+
+    return False
+
+
+def escenario_visual_nexon(
+    texto: str,
+    titulo: str,
+) -> dict[str, Any]:
+    """Crea búsquedas documentales concretas para Nexon IA."""
+    contexto = normalizar_texto_busqueda(f"{titulo} {texto}")
+    escenarios: tuple[
+        tuple[tuple[str, ...], str, str, str, str],
+        ...,
+    ] = (
+        (
+            ("deepfake", "medio sintetico", "rostro sintetico", "intercambio de rostro"),
+            "imagen_stock",
+            "análisis forense de rostro deepfake comparación",
+            "deepfake face comparison digital forensics analyst",
+            "Fotografía documental de un analista examinando señales visibles de manipulación facial en dos fotogramas.",
+        ),
+        (
+            ("evidencia audiovisual", "camara", "grabacion", "testigo imparcial"),
+            "video_stock",
+            "cámara de noticias grabando evidencia en la calle",
+            "news camera recording street evidence journalist",
+            "Video documental de una cámara profesional registrando un acontecimiento real con periodistas presentes.",
+        ),
+        (
+            ("manipulacion historica", "propaganda", "fotografia retocada", "raices historicas"),
+            "imagen_stock",
+            "archivo histórico manipulación fotográfica propaganda",
+            "historical photo manipulation propaganda archive",
+            "Fotografía de archivo relacionada con técnicas históricas de retoque y propaganda visual.",
+        ),
+        (
+            ("gan", "red generativa", "generador", "discriminador"),
+            "imagen_stock",
+            "investigadores inteligencia artificial redes GAN laboratorio",
+            "GAN artificial intelligence researchers computer laboratory",
+            "Fotografía real de investigadores trabajando con modelos generativos en un laboratorio informático.",
+        ),
+        (
+            ("clonacion de voz", "voz sintetica", "audio falso", "onda de audio"),
+            "video_stock",
+            "grabación de voz micrófono análisis de audio",
+            "voice recording microphone audio analysis studio",
+            "Video real de una grabación de voz y su análisis técnico en un estudio de audio.",
+        ),
+        (
+            ("tiempo real", "videoconferencia", "mascara digital", "movimiento de labios"),
+            "video_stock",
+            "videoconferencia cámara seguimiento facial tiempo real",
+            "video conference camera real time face tracking",
+            "Video de una videoconferencia con una persona frente a cámara y seguimiento facial en tiempo real.",
+        ),
+        (
+            ("politic", "eleccion", "lider mundial", "campana electoral"),
+            "video_stock",
+            "líder político discurso conferencia de prensa elecciones",
+            "political leader press conference election speech",
+            "Video documental de un líder político ofreciendo un discurso ante cámaras y periodistas.",
+        ),
+        (
+            ("fraude", "estafa", "delincuencia", "suplantacion", "transferencia bancaria"),
+            "video_stock",
+            "investigación fraude digital llamada bancaria falsa",
+            "digital fraud investigation phone banking scam",
+            "Video realista de una investigación de fraude digital relacionado con llamadas o transacciones bancarias.",
+        ),
+        (
+            ("erosion social", "confianza social", "dudar", "desinformacion"),
+            "video_stock",
+            "personas verificando noticias falsas en teléfonos",
+            "people checking fake news smartphones media literacy",
+            "Video documental de personas comparando noticias y verificando información recibida en sus teléfonos.",
+        ),
+        (
+            ("forense", "deteccion", "autenticidad", "analisis de pixeles"),
+            "video_stock",
+            "analista forense verificando autenticidad de video",
+            "digital forensics analyst authenticating video footage",
+            "Video real de un especialista forense examinando la autenticidad de una grabación audiovisual.",
+        ),
+        (
+            ("legislacion", "ley", "regulacion", "marco etico", "tribunal"),
+            "video_stock",
+            "legisladores debate regulación tecnología parlamento",
+            "lawmakers debating technology regulation parliament",
+            "Video documental de legisladores debatiendo regulación tecnológica en una cámara parlamentaria.",
+        ),
+        (
+            ("marca de agua", "procedencia", "firma digital", "c2pa", "infraestructura de la verdad"),
+            "imagen_stock",
+            "cámara profesional autenticidad contenido firma digital",
+            "professional camera content authenticity digital signature",
+            "Fotografía real de una cámara profesional y un proceso de verificación de procedencia del contenido.",
+        ),
+    )
+
+    for palabras_clave, tipo, busqueda_es, busqueda_en, descripcion in escenarios:
+        if any(clave in contexto for clave in palabras_clave):
+            return {
+                "tipo_recurso": tipo,
+                "busqueda_es": busqueda_es,
+                "busqueda_en": busqueda_en,
+                "descripcion": descripcion,
+            }
+
+    concepto = resumir_concepto(texto, 10)
+    palabras = [
+        palabra
+        for palabra in re.findall(r"\b[a-zA-Z0-9'-]+\b", contexto)
+        if len(palabra) >= 4
+        and palabra not in {
+            "para", "como", "este", "esta", "desde", "entre",
+            "sobre", "tambien", "puede", "pueden", "cuando",
+            "donde", "nuestra", "nuestro", "estos", "estas",
+        }
+    ]
+    busqueda_es = " ".join(palabras[:7]) or resumir_concepto(titulo, 6)
+    return {
+        "tipo_recurso": "imagen_stock",
+        "busqueda_es": busqueda_es,
+        "busqueda_en": f"{busqueda_es} documentary evidence",
+        "descripcion": (
+            "Fotografía documental que muestre de forma directa y "
+            f"comprobable este concepto narrado: {concepto}."
+        ),
+    }
+
+
+def escenario_visual_local(
+    texto: str,
+    titulo: str,
+    nombre_canal: str,
+) -> dict[str, Any]:
+    """Selecciona un escenario concreto mediante reglas editoriales."""
+    if normalizar_texto_busqueda(nombre_canal) != "cogniviva":
+        return escenario_visual_nexon(
+            texto=texto,
+            titulo=titulo,
+        )
+
+    contexto = normalizar_texto_busqueda(
+        f"{titulo} {texto}"
+    )
+
+    escenarios: tuple[
+        tuple[tuple[str, ...], str, str, str, str],
+        ...,
+    ] = (
+        (
+            ("amigdala", "corteza prefrontal", "sistema limbico"),
+            "grafico",
+            "diagrama cerebro humano amígdala corteza prefrontal",
+            "human brain amygdala prefrontal cortex medical illustration",
+            "Diagrama educativo del cerebro humano que identifica la amígdala, la corteza prefrontal y su relación funcional.",
+        ),
+        (
+            ("cerebro", "neuronal", "neurociencia"),
+            "grafico",
+            "diagrama cerebro humano proceso neuronal educativo",
+            "human brain neural process educational medical illustration",
+            "Diagrama educativo del cerebro humano con conexiones neuronales claras y sin cifras inventadas.",
+        ),
+        (
+            ("sesgo del presente", "yo futuro", "futuro"),
+            "grafico",
+            "línea temporal decisiones presente consecuencias futuras",
+            "decision timeline present choices future consequences illustration",
+            "Línea temporal educativa que conecta una decisión presente con sus posibles consecuencias futuras.",
+        ),
+        (
+            ("bucle", "refuerzo", "alivio inmediato", "recompensa"),
+            "grafico",
+            "ciclo alivio inmediato evitación hábito conducta",
+            "avoidance habit immediate relief behavior cycle diagram",
+            "Diagrama circular del ciclo entre incomodidad, evitación, alivio inmediato y repetición de la conducta.",
+        ),
+        (
+            ("procrast", "posponer", "aplazar"),
+            "video_stock",
+            "persona posponiendo tarea importante escritorio calendario",
+            "adult postponing important task desk calendar documentary",
+            "Video documental de una persona ante una tarea importante, con calendario visible y señales realistas de postergación.",
+        ),
+        (
+            ("pereza", "autocritica", "culpa", "fracaso"),
+            "imagen_stock",
+            "persona reflexiva escritorio autocrítica presión emocional",
+            "reflective adult desk self criticism emotional pressure",
+            "Fotografía real de una persona reflexiva frente a su trabajo, mostrando presión emocional sin dramatización clínica.",
+        ),
+        (
+            ("autocompasion", "compasion", "dialogo interno"),
+            "imagen_stock",
+            "persona tranquila escribiendo diario reflexión personal",
+            "calm adult journaling personal reflection self compassion",
+            "Fotografía real de una persona escribiendo en un diario durante un momento tranquilo de reflexión personal.",
+        ),
+        (
+            ("friccion", "primer paso", "comenzar", "iniciar"),
+            "video_stock",
+            "persona comenzando tarea pequeño primer paso escritorio",
+            "adult starting difficult task small first step desk",
+            "Video documental de una persona organizando lo necesario y comenzando una tarea con un primer paso concreto.",
+        ),
+        (
+            ("consecuencia", "largo plazo", "fecha limite"),
+            "imagen_stock",
+            "calendario tareas pendientes consecuencias largo plazo",
+            "calendar overdue tasks long term consequences planning",
+            "Fotografía real de un calendario con tareas pendientes y una persona revisando prioridades a largo plazo.",
+        ),
+        (
+            ("trabajo", "tarea", "productividad", "proyecto"),
+            "video_stock",
+            "persona trabajando tarea concreta escritorio oficina",
+            "adult completing focused task office desk documentary",
+            "Video documental de una persona realizando una tarea concreta en un espacio de trabajo realista y ordenado.",
+        ),
+        (
+            ("decision", "eleccion", "alternativa"),
+            "grafico",
+            "diagrama opciones decisión conducta consecuencias",
+            "decision options behavior consequences educational diagram",
+            "Diagrama educativo que conecta opciones, decisión, conducta y consecuencias sin utilizar estadísticas inventadas.",
+        ),
+        (
+            ("emocion", "ansiedad", "estres", "incomodidad"),
+            "imagen_stock",
+            "persona manejando incomodidad emocional situación cotidiana",
+            "adult managing emotional discomfort everyday situation documentary",
+            "Fotografía real de una persona atravesando una situación cotidiana de incomodidad emocional con expresión natural.",
+        ),
+        (
+            ("habito", "rutina", "patron", "automatico"),
+            "grafico",
+            "diagrama hábito señal rutina consecuencia conducta",
+            "habit cue routine consequence behavior cycle diagram",
+            "Diagrama educativo del ciclo entre señal, rutina y consecuencia aplicado a una conducta cotidiana.",
+        ),
+    )
+
+    for palabras_clave, tipo, busqueda_es, busqueda_en, descripcion in escenarios:
+        if any(clave in contexto for clave in palabras_clave):
+            return {
+                "tipo_recurso": tipo,
+                "busqueda_es": busqueda_es,
+                "busqueda_en": busqueda_en,
+                "descripcion": descripcion,
+            }
+
+    concepto = resumir_concepto(texto)
+    return {
+        "tipo_recurso": "imagen_stock",
+        "busqueda_es": f"psicología cotidiana {resumir_concepto(titulo, 5)}",
+        "busqueda_en": "adult everyday behavior psychology documentary photo",
+        "descripcion": (
+            "Fotografía real de una situación cotidiana que represente "
+            f"directamente este concepto: {concepto}."
+        ),
+    }
+
+
+def crear_plan_visual_local(
+    contexto: list[dict[str, Any]],
+    guion: dict[str, Any],
+    nombre_canal: str,
+) -> dict[str, Any]:
+    """Construye un plan completo cuando Gemini no está disponible."""
+    segmentos: list[dict[str, Any]] = []
+    movimientos = (
+        "zoom lento",
+        "paneo horizontal",
+        "acercamiento",
+        "corte directo",
+    )
+    indice_global = 0
+    for original in contexto:
+        bloques = original.get("bloques_narracion", [])
+        clips: list[dict[str, Any]] = []
+        titulo_segmento = str(
+            original.get("titulo", "Sin título")
+        )
+        tipo_segmento = normalizar_texto_busqueda(
+            str(original.get("tipo", "escena"))
+        )
+
+        for indice, bloque in enumerate(bloques, start=1):
+            texto_narrado = str(
+                bloque.get("texto_narrado", "")
+            ).strip()
+            escenario = escenario_visual_local(
+                texto=texto_narrado,
+                titulo=titulo_segmento,
+                nombre_canal=nombre_canal,
+            )
+            tipo_recurso = str(escenario["tipo_recurso"])
+
+            es_llamada = es_llamada_accion(
+                texto=texto_narrado,
+                tipo_segmento=tipo_segmento,
+            ) and indice == 1
+
+            if es_llamada:
+                tipo_recurso = "texto_animado"
+
+            if (
+                tipo_recurso == "grafico"
+                and not narracion_autoriza_grafico(texto_narrado)
+            ):
+                tipo_recurso = "imagen_stock"
+
+            concepto = resumir_concepto(
+                texto_narrado or titulo_segmento
+            )
+            consulta_en = str(escenario["busqueda_en"])
+            consulta_es = str(escenario["busqueda_es"])
+            texto_pantalla = ""
+            descripcion = str(escenario["descripcion"])
+
+            if tipo_recurso != escenario["tipo_recurso"]:
+                if tipo_recurso == "grafico":
+                    descripcion = (
+                        "Diagrama educativo horizontal que representa "
+                        f"claramente este concepto: {concepto}."
+                    )
+                elif tipo_recurso == "video_stock":
+                    descripcion = (
+                        "Video documental de una acción cotidiana "
+                        f"relacionada directamente con: {concepto}."
+                    )
+                else:
+                    descripcion = (
+                        "Fotografía real de una situación cotidiana "
+                        f"relacionada directamente con: {concepto}."
+                    )
+
+            if tipo_recurso == "texto_animado":
+                texto_pantalla = resumir_concepto(
+                    titulo_segmento,
+                    7,
+                )
+
+            clips.append(
+                {
+                    "orden": indice,
+                    "duracion_segundos": round(
+                        float(bloque.get("duracion_segundos", 1)),
+                        3,
+                    ),
+                    "texto_narrado": texto_narrado,
+                    "inicio_segundos": float(
+                        bloque.get("inicio_segundos", 0)
+                    ),
+                    "final_segundos": float(
+                        bloque.get("final_segundos", 0)
+                    ),
+                    "tipo_recurso": tipo_recurso,
+                    "descripcion": descripcion,
+                    "concepto_central": concepto,
+                    "criterios_obligatorios": [
+                        concepto,
+                        "relación directa con el texto narrado",
+                    ],
+                    "elementos_prohibidos": [
+                        "robots humanoides genéricos",
+                        "interfaces o estadísticas inventadas",
+                        "escenas sin relación con la narración",
+                    ],
+                    "continuidad_id": (
+                        f"segmento_{original.get('numero', 0)}"
+                    ),
+                    "consultas_alternativas": [
+                        consulta_en,
+                        consulta_es,
+                        f"{consulta_en} close up",
+                    ],
+                    "busqueda_es": consulta_es,
+                    "busqueda_en": consulta_en,
+                    "plataforma": "",
+                    "url_oficial": "",
+                    "pantalla_objetivo": "",
+                    "accion_visual": "",
+                    "requiere_login": False,
+                    "movimiento": movimientos[
+                        indice_global % len(movimientos)
+                    ],
+                    "texto_pantalla": texto_pantalla,
+                }
+            )
+            indice_global += 1
+
+        segmentos.append(
+            {
+                "tipo": original.get("tipo", "escena"),
+                "numero": original.get("numero", 0),
+                "titulo": titulo_segmento,
+                "duracion_audio_segundos": float(
+                    original.get("duracion_audio_segundos", 0)
+                ),
+                "clips": clips,
+            }
+        )
+
+    estilo = (
+        "Documental horizontal de psicología práctica con fotografías "
+        "reales, acciones cotidianas y diagramas educativos claros."
+        if normalizar_texto_busqueda(nombre_canal) == "cogniviva"
+        else (
+            "Documental horizontal educativo con videos y fotografias "
+            "reales que coinciden con cada frase narrada. Los graficos "
+            "solo se permiten cuando la narracion los necesita de forma "
+            "explicita."
+        )
+    )
+
+    return {
+        "titulo": guion.get("titulo", "Sin título"),
+        "estilo_visual_general": estilo,
+        "resolucion": "1920x1080",
+        "segmentos": segmentos,
+        "notas_edicion": [
+            "Plan de recuperación local sincronizado con el audio real.",
+            "Cada clip conserva exactamente su bloque narrado y sus tiempos.",
+            "Validar la relación visual antes del render final.",
+            "No generar gráficos como respaldo de stock ausente.",
+        ],
+    }
+
 class PlanificadorVisual:
     """Crea un plan visual sincronizado con la narración."""
 
@@ -712,8 +1222,8 @@ class PlanificadorVisual:
         """
         Construye segmentos visuales a partir del audio real.
 
-        Cada segmento contiene bloques de aproximadamente
-        8-12 segundos asociados a texto narrado concreto.
+        Cada segmento contiene bloques semanticos de aproximadamente
+        3-10 segundos asociados a texto narrado concreto.
         """
         contexto: list[dict[str, Any]] = []
         inicio_global = 0.0
@@ -795,6 +1305,12 @@ class PlanificadorVisual:
     ) -> dict[str, Any]:
         """Genera el plan mediante Gemini."""
         guion = contenido_guion["guion"]
+        nombre_canal = str(
+            contenido_guion.get(
+                "channel_name",
+                "NEXON IA",
+            )
+        ).strip() or "NEXON IA"
 
         contexto = self.construir_contexto_segmentos(
             guion=guion,
@@ -809,7 +1325,7 @@ class PlanificadorVisual:
 
         prompt = f"""
 Act?a como director audiovisual y editor profesional de videos
-educativos para YouTube del canal NEXON IA.
+educativos para YouTube del canal {nombre_canal}.
 
 T?TULO:
 {guion.get("titulo", "Sin t?tulo")}
@@ -823,6 +1339,7 @@ INSTRUCCIONES OBLIGATORIAS:
 2. Cada segmento contiene "bloques_narracion" ya sincronizados.
 3. Debes devolver EXACTAMENTE UN clip por cada bloque_narracion.
 4. El clip debe ilustrar ?nicamente el texto_narrado de ese bloque.
+   No fragmentes nuevamente el bloque ni pidas varias tomas para cubrirlo.
 5. Copia exactamente en cada clip:
    - texto_narrado
    - inicio_segundos
@@ -859,20 +1376,20 @@ INSTRUCCIONES OBLIGATORIAS:
     desplazamiento vertical, corte directo o sin movimiento.
 18. texto_pantalla debe ser breve y solo cuando a?ada valor.
 19. El resultado es horizontal 1920x1080.
-20. Entre el 35 y el 45 por ciento de los clips debe ser
-    imagen_stock. Estas im?genes ser?n verificadas posteriormente
-    por Gemini antes de incluirlas.
+20. Prioriza imagen_stock y video_stock reales. Cada recurso debe
+    mostrar el sujeto, la accion, el lugar o el proceso mencionado
+    en el bloque narrado.
 21. Usa video_stock solamente cuando exista una acci?n f?sica real
     que pueda encontrarse como video: personas trabajando,
     servidores funcionando, laboratorios, hospitales, tribunales,
     f?bricas, ciudades o equipos en movimiento.
-22. video_stock debe representar entre el 25 y el 35 por ciento
-    del documental. No uses videos abstractos de luces, part?culas,
-    rostros rob?ticos gen?ricos o c?digos aleatorios.
-23. Usa grafico en aproximadamente el 20 al 30 por ciento
-    de los clips cuando la narracion explique procesos, arquitectura,
-    comparaciones, escalas, relaciones causales o conceptos abstractos.
-    El grafico debe usar etiquetas verificables y nunca inventar cifras.
+22. No uses videos abstractos de luces, part?culas, rostros rob?ticos
+    gen?ricos o c?digos aleatorios.
+23. Usa grafico solamente cuando el texto_narrado mencione de forma
+    explicita un grafico, diagrama, tabla, estadistica, porcentaje,
+    mapa de calor, curva o flujo de datos. Si no lo menciona, el tipo
+    debe ser video_stock o imagen_stock. No existe una cuota minima
+    de graficos y es correcto devolver cero graficos.
 25. Usa texto_animado en un maximo de 5 clips en todo el documental,
     nunca m?s de uno por segmento y ?nicamente para el t?tulo,
     una pregunta central, transiciones importantes o la llamada
@@ -916,41 +1433,82 @@ INSTRUCCIONES OBLIGATORIAS:
     concepto central mediante palabras diferentes.
 42. continuidad_id debe repetirse solo cuando varios clips consecutivos
     pertenezcan a la misma secuencia visual, entidad o proceso.
-43. Para ideas abstractas, mecanismos, escalas, predicciones o
-    arquitecturas utiliza grafico antes que una fotografia generica.
+43. Para ideas abstractas busca una aplicacion, objeto, lugar, archivo
+    documental o persona real relacionada. No uses un grafico solo
+    porque la idea sea abstracta.
 44. La descripcion debe poder evaluarse sin leer el resto del guion:
     identifica claramente sujeto, accion, entorno y relacion narrativa.
 45. No apruebes como video_stock una accion cuyo resultado probable
     solo coincida por palabras generales. La accion fisica debe ser
     exactamente compatible con la narracion.
 46. Antes de devolver cada clip comprueba concepto_central,
-    criterios_obligatorios y elementos_prohibidos. Si el stock
-    probablemente fallaria, cambia el tipo_recurso a grafico.
+    criterios_obligatorios y elementos_prohibidos. Si no existe stock
+    preciso, conserva el tipo de stock y marca la descripcion como
+    pendiente. Nunca lo cambies a grafico para completar el plan.
 47. Devuelve exclusivamente el JSON solicitado.
 """.strip()
 
-        resultado = self.cliente.generar_json(
-            prompt=prompt,
-            schema=PLAN_VISUAL_SCHEMA,
-        )
+        modelo_usado = "planificador_local_v1"
 
-        segmentos_generados = resultado.get(
-            "segmentos"
-        )
-
-        if not isinstance(
-            segmentos_generados,
-            list,
-        ):
-            raise RuntimeError(
-                "Gemini no devolvió segmentos visuales válidos."
+        try:
+            resultado = self.cliente.generar_json(
+                prompt=prompt,
+                schema=PLAN_VISUAL_SCHEMA,
             )
 
-        if len(segmentos_generados) != len(contexto):
-            raise RuntimeError(
-                "El número de segmentos visuales no coincide "
-                "con el manifiesto de audio."
+            segmentos_generados = resultado.get(
+                "segmentos"
             )
+
+            if not isinstance(
+                segmentos_generados,
+                list,
+            ):
+                raise RuntimeError(
+                    "Gemini no devolvió segmentos visuales válidos."
+                )
+
+            if len(segmentos_generados) != len(contexto):
+                raise RuntimeError(
+                    "El número de segmentos visuales no coincide "
+                    "con el manifiesto de audio."
+                )
+
+            if any(
+                not isinstance(segmento, dict)
+                or not isinstance(segmento.get("clips"), list)
+                or not segmento.get("clips")
+                for segmento in segmentos_generados
+            ):
+                raise RuntimeError(
+                    "Gemini devolvió uno o más segmentos sin clips."
+                )
+
+            modelo_usado = str(
+                getattr(
+                    self.cliente,
+                    "last_model_used",
+                    "gemini",
+                )
+                or "gemini"
+            )
+
+        except Exception as error:
+            print()
+            print(
+                "AVISO: Gemini no pudo crear el plan visual "
+                f"({type(error).__name__})."
+            )
+            print(
+                "Aplicando plan visual local sincronizado "
+                "con la narración..."
+            )
+            resultado = crear_plan_visual_local(
+                contexto=contexto,
+                guion=guion,
+                nombre_canal=nombre_canal,
+            )
+            segmentos_generados = resultado["segmentos"]
 
         segmentos_finales: list[dict[str, Any]] = []
 
@@ -1024,6 +1582,56 @@ INSTRUCCIONES OBLIGATORIAS:
 
                 if tipo_recurso not in tipos_permitidos:
                     tipo_recurso = "imagen_stock"
+
+                escenario_seguro = escenario_visual_local(
+                    texto=texto_narrado,
+                    titulo=str(original.get("titulo", "")),
+                    nombre_canal=nombre_canal,
+                )
+
+                if (
+                    tipo_recurso == "grafico"
+                    and not narracion_autoriza_grafico(texto_narrado)
+                ):
+                    tipo_recurso = str(
+                        escenario_seguro["tipo_recurso"]
+                    )
+
+                if (
+                    tipo_recurso == "texto_animado"
+                    and not es_llamada_accion(
+                        texto=texto_narrado,
+                        tipo_segmento=str(original.get("tipo", "")),
+                    )
+                ):
+                    tipo_recurso = str(
+                        escenario_seguro["tipo_recurso"]
+                    )
+
+                consulta_generada = " ".join(
+                    (
+                        str(clip.get("busqueda_en", "")),
+                        str(clip.get("busqueda_es", "")),
+                    )
+                )
+
+                if consulta_invalida_para_canal(
+                    consulta=consulta_generada,
+                    nombre_canal=nombre_canal,
+                ):
+                    clip["busqueda_en"] = str(
+                        escenario_seguro["busqueda_en"]
+                    )
+                    clip["busqueda_es"] = str(
+                        escenario_seguro["busqueda_es"]
+                    )
+                    clip["descripcion"] = str(
+                        escenario_seguro["descripcion"]
+                    )
+                    clip["consultas_alternativas"] = [
+                        str(escenario_seguro["busqueda_en"]),
+                        str(escenario_seguro["busqueda_es"]),
+                    ]
 
                 clip["orden"] = indice + 1
 
@@ -1202,11 +1810,18 @@ INSTRUCCIONES OBLIGATORIAS:
                     "espacio vectorial",
                 )
 
-                if any(
-                    indicador in descripcion_minusculas
-                    for indicador in indicadores_grafico
+                if (
+                    narracion_autoriza_grafico(texto_narrado)
+                    and any(
+                        indicador in descripcion_minusculas
+                        for indicador in indicadores_grafico
+                    )
                 ):
                     clip["tipo_recurso"] = "grafico"
+                elif clip["tipo_recurso"] == "grafico":
+                    clip["tipo_recurso"] = str(
+                        escenario_seguro["tipo_recurso"]
+                    )
 
                 clips_alineados.append(
                     clip
@@ -1230,7 +1845,7 @@ INSTRUCCIONES OBLIGATORIAS:
             "generado_en": datetime.now()
             .astimezone()
             .isoformat(timespec="seconds"),
-            "modelo": self.cliente.last_model_used,
+            "modelo": modelo_usado,
             "voz": manifiesto.get("voz", ""),
             "duracion_total_segundos": manifiesto.get(
                 "duracion_total_segundos",

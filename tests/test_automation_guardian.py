@@ -71,11 +71,7 @@ class GuardianPipelineTest(unittest.TestCase):
         pasos: list[str],
         error: str = "",
     ) -> None:
-        ruta = (
-            self.root
-            / "data"
-            / "pipeline_state.json"
-        )
+        ruta = self.guardian.pipeline_state_path
 
         ruta.parent.mkdir(
             parents=True,
@@ -429,7 +425,7 @@ class ProgramadorWindowsTest(
             contenido,
         )
         self.assertIn(
-            "guardian_task.log",
+            "guardian_nexon_ia.log",
             contenido,
         )
 

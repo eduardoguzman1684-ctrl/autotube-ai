@@ -28,6 +28,9 @@ from autotube.video.subtitle_generator import (
     GeneradorSubtitulos,
     cargar_audio_para_subtitulos,
 )
+from autotube.timeline.semantic_timeline import (
+    GeneradorTimelineSemantica,
+)
 from autotube.video.finalizer import FinalizadorVideo
 from autotube.video.shorts_generator import GeneradorShorts
 # SHORTS_AUTOMATICOS_INTEGRADOS_V1
@@ -40,6 +43,12 @@ from autotube.visuals.tutorial_capture import (
 from autotube.content.ideas_generator import (
     NICHO_PREDETERMINADO,
     GeneradorIdeas,
+)
+from autotube.content.channel_profiles import (
+    CHANNEL_CHOICES,
+    DEFAULT_CHANNEL,
+    channel_profile,
+    resolve_niche,
 )
 from autotube.content.script_generator import (
     GeneradorGuiones,
@@ -57,6 +66,11 @@ from autotube.core.config import load_settings
 from autotube.core.health import ejecutar_diagnostico
 from autotube.core.logging_config import configure_logging
 from autotube.core.security import ejecutar_revision_seguridad
+from autotube.operations.channel_runtime import (
+    incomplete_other_channel_states,
+    migrate_legacy_pipeline_state,
+    pipeline_state_path,
+)
 
 
 def crear_parser() -> argparse.ArgumentParser:
@@ -111,6 +125,13 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Idioma de las ideas generadas.",
     )
 
+    ideas_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Perfil editorial para las ideas.",
+    )
+
     script_parser = subcomandos.add_parser(
         "script",
         help="Genera un guion desde una idea guardada.",
@@ -133,6 +154,13 @@ def crear_parser() -> argparse.ArgumentParser:
         "--idioma",
         default="español",
         help="Idioma del guion generado.",
+    )
+
+    script_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Perfil editorial para el guion.",
     )
 
     check_parser = subcomandos.add_parser(
@@ -169,6 +197,13 @@ def crear_parser() -> argparse.ArgumentParser:
         type=int,
         default=145,
         help="Velocidad objetivo en palabras por minuto.",
+    )
+
+    fix_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Perfil editorial que se conservara.",
     )
 
     voice_parser = subcomandos.add_parser(
@@ -217,6 +252,13 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Manifiesto de audio. Por defecto usa el más reciente.",
     )
 
+    visual_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Canal propietario del plan visual.",
+    )
+
     assets_parser = subcomandos.add_parser(
         "assets",
         help="Descarga recursos de Pixabay para el plan visual.",
@@ -226,6 +268,13 @@ def crear_parser() -> argparse.ArgumentParser:
         "--plan",
         default=None,
         help="Plan visual. Por defecto usa el más reciente.",
+    )
+
+    assets_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Canal propietario de los recursos visuales.",
     )
 
     assets_parser.add_argument(
@@ -253,6 +302,39 @@ def crear_parser() -> argparse.ArgumentParser:
         "--forzar",
         action="store_true",
         help="Vuelve a generar recursos locales existentes.",
+    )
+
+    local_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Canal propietario de la coleccion visual.",
+    )
+
+    timeline_parser = subcomandos.add_parser(
+        "timeline",
+        help=(
+            "Crea y valida la timeline semantica antes del render."
+        ),
+    )
+
+    timeline_parser.add_argument(
+        "--assets",
+        default=None,
+        help="Manifiesto visual. Usa el mas reciente por defecto.",
+    )
+
+    timeline_parser.add_argument(
+        "--audio",
+        default=None,
+        help="Manifiesto de audio. Usa el mas reciente por defecto.",
+    )
+
+    timeline_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Canal propietario de la produccion.",
     )
 
     render_parser = subcomandos.add_parser(
@@ -293,6 +375,30 @@ def crear_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Conserva los clips intermedios del render.",
     )
+
+    render_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Canal propietario de los recursos del render.",
+    )
+
+    visual_cache_parser = subcomandos.add_parser(
+        "visual-cache",
+        help="Guarda, restaura o libera visuales mediante Google Drive.",
+    )
+    visual_cache_parser.add_argument(
+        "accion",
+        choices=["store", "restore", "cleanup", "status"],
+    )
+    visual_cache_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+    )
+    visual_cache_parser.add_argument("--manifiesto", default=None)
+    visual_cache_parser.add_argument("--dry-run", action="store_true")
+    visual_cache_parser.add_argument("--confirmar", action="store_true")
 
     subtitles_parser = subcomandos.add_parser(
         "subtitles",
@@ -397,6 +503,13 @@ def crear_parser() -> argparse.ArgumentParser:
     )
 
     guardian_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Canal que producira o reanudara el Guardian.",
+    )
+
+    guardian_parser.add_argument(
         "--sin-publicar",
         action="store_true",
         help="Produce contenido sin publicar en YouTube.",
@@ -435,6 +548,13 @@ def crear_parser() -> argparse.ArgumentParser:
         ),
         default="estado",
         help="Operacion que se realizara sobre la tarea.",
+    )
+
+    scheduler_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Canal cuya tarea programada se administrara.",
     )
 
     scheduler_parser.add_argument(
@@ -520,14 +640,35 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Cantidad maxima de videos incluidos.",
     )
 
-    subcomandos.add_parser(
+    analytics_parser.add_argument(
+        "--canal",
+        choices=["nexon_ia", "cogniviva"],
+        default="nexon_ia",
+        help="Perfil de YouTube que se analizara.",
+    )
+
+    publish_status_parser = subcomandos.add_parser(
         "publish-status",
         help="Muestra el estado actual de la cola de YouTube.",
     )
 
-    subcomandos.add_parser(
+    publish_status_parser.add_argument(
+        "--canal",
+        choices=["nexon_ia", "cogniviva"],
+        default="nexon_ia",
+        help="Perfil de YouTube que se consultara.",
+    )
+
+    publish_queue_parser = subcomandos.add_parser(
         "publish-queue",
         help="Sincroniza archivos y publicaciones con la cola.",
+    )
+
+    publish_queue_parser.add_argument(
+        "--canal",
+        choices=["nexon_ia", "cogniviva"],
+        default="nexon_ia",
+        help="Perfil de YouTube que se sincronizara.",
     )
 
     publish_resume_parser = subcomandos.add_parser(
@@ -539,6 +680,13 @@ def crear_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Simula la reanudacion sin subir videos.",
+    )
+
+    publish_resume_parser.add_argument(
+        "--canal",
+        choices=["nexon_ia", "cogniviva"],
+        default="nexon_ia",
+        help="Perfil de YouTube que se reanudara.",
     )
 
     analytics_insights_parser = subcomandos.add_parser(
@@ -553,6 +701,13 @@ def crear_parser() -> argparse.ArgumentParser:
         "--reporte",
         default=None,
         help="Informe JSON; usa el mas reciente por defecto.",
+    )
+
+    analytics_insights_parser.add_argument(
+        "--canal",
+        choices=["nexon_ia", "cogniviva"],
+        default="nexon_ia",
+        help="Perfil editorial que recibira los insights.",
     )
 
     experiment_parser = subcomandos.add_parser(
@@ -586,6 +741,13 @@ def crear_parser() -> argparse.ArgumentParser:
         "--sin-miniaturas",
         action="store_true",
         help="No renderiza imagenes en experimentos de miniatura.",
+    )
+
+    experiment_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Canal del experimento editorial.",
     )
 
     experiment_result_parser = subcomandos.add_parser(
@@ -641,6 +803,13 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Archivo JSON; usa el experimento actual por defecto.",
     )
 
+    experiment_result_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Canal del experimento evaluado.",
+    )
+
     shorts_parser = subcomandos.add_parser(
         "shorts",
         help="Genera Shorts verticales desde el documental mas reciente.",
@@ -664,6 +833,13 @@ def crear_parser() -> argparse.ArgumentParser:
         "--solo-plan",
         action="store_true",
         help="Selecciona los fragmentos sin renderizar videos.",
+    )
+
+    shorts_parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+        help="Marca y perfil editorial de los Shorts.",
     )
 
     run_parser = subcomandos.add_parser(
@@ -710,6 +886,13 @@ def crear_parser() -> argparse.ArgumentParser:
     )
 
     run_parser.add_argument(
+        "--canal",
+        choices=["nexon_ia", "cogniviva"],
+        default="nexon_ia",
+        help="Canal de YouTube de destino.",
+    )
+
+    run_parser.add_argument(
         "--omitir-doctor",
         action="store_true",
         help="No ejecuta la comprobaci?n inicial del proyecto.",
@@ -736,6 +919,24 @@ def crear_parser() -> argparse.ArgumentParser:
         "--reanudar",
         action="store_true",
         help="Contin?a desde el ?ltimo paso completado.",
+    )
+
+    run_parser.add_argument(
+        "--regenerar-visuales",
+        action="store_true",
+        help=(
+            "Con --reanudar conserva guion y voz, pero repite "
+            "plan visual, recursos, render y subtitulos."
+        ),
+    )
+
+    run_parser.add_argument(
+        "--conservar-visuales-locales",
+        action="store_true",
+        help=(
+            "Conserva los recursos visuales locales despues del respaldo. "
+            "Por defecto se liberan tras verificar Google Drive."
+        ),
     )
 
 
@@ -860,20 +1061,25 @@ def generar_ideas(argumentos: argparse.Namespace) -> None:
     """Genera, muestra y guarda ideas para videos."""
     settings = load_settings()
     generador = GeneradorIdeas()
+    canal_slug = getattr(argumentos, "canal", DEFAULT_CHANNEL)
+    profile = channel_profile(canal_slug)
+    nicho = resolve_niche(canal_slug, argumentos.nicho)
 
     print("\nGENERADOR DE IDEAS")
     print("=" * 70)
-    print(f"Nicho: {argumentos.nicho}")
+    print(f"Canal: {profile['display_name']} ({canal_slug})")
+    print(f"Nicho: {nicho}")
     print(f"Cantidad solicitada: {argumentos.cantidad}")
     print("Generando ideas...")
 
     resultado = generador.generar(
-        nicho=argumentos.nicho,
+        nicho=nicho,
         cantidad=argumentos.cantidad,
         idioma=argumentos.idioma,
         data_dir=settings.data_dir,
         youtube_api_key=settings.youtube_api_key,
         region_tendencias="MX",
+        channel_slug=canal_slug,
     )
 
     ruta = generador.guardar(
@@ -974,6 +1180,8 @@ def generar_ideas(argumentos: argparse.Namespace) -> None:
 def generar_guion(argumentos: argparse.Namespace) -> None:
     """Genera un guion a partir de una idea guardada."""
     settings = load_settings()
+    canal_slug = getattr(argumentos, "canal", DEFAULT_CHANNEL)
+    profile = channel_profile(canal_slug)
 
     archivo = (
         Path(argumentos.archivo)
@@ -985,11 +1193,13 @@ def generar_guion(argumentos: argparse.Namespace) -> None:
         data_dir=settings.data_dir,
         indice=argumentos.indice,
         archivo=archivo,
+        channel_slug=canal_slug,
     )
 
     print("\nGENERADOR DE GUIONES")
     print("=" * 70)
     print(f"Archivo de ideas: {archivo_ideas}")
+    print(f"Canal: {profile['display_name']} ({canal_slug})")
     print(f"Idea seleccionada: {argumentos.indice}")
     print(f"Título: {idea.get('titulo', 'Sin título')}")
     print("Generando guion...")
@@ -999,6 +1209,7 @@ def generar_guion(argumentos: argparse.Namespace) -> None:
     resultado = generador.generar(
         idea=idea,
         idioma=argumentos.idioma,
+        channel_slug=canal_slug,
     )
 
     ruta = generador.guardar(
@@ -1060,6 +1271,7 @@ def revisar_guion(argumentos: argparse.Namespace) -> None:
 def corregir_guion(argumentos: argparse.Namespace) -> None:
     """Expande la narración de un guion demasiado corto."""
     settings = load_settings()
+    canal_slug = getattr(argumentos, "canal", DEFAULT_CHANNEL)
 
     archivo = (
         Path(argumentos.archivo)
@@ -1083,6 +1295,7 @@ def corregir_guion(argumentos: argparse.Namespace) -> None:
     resultado = reparador.corregir(
         contenido=contenido,
         palabras_por_minuto=argumentos.ppm,
+        channel_slug=canal_slug,
     )
 
     ruta_corregida = reparador.guardar(
@@ -1171,6 +1384,11 @@ def generar_voz(argumentos: argparse.Namespace) -> None:
 def generar_plan_visual(argumentos: argparse.Namespace) -> None:
     """Crea un plan visual sincronizado con el audio."""
     settings = load_settings()
+    canal_slug = getattr(
+        argumentos,
+        "canal",
+        DEFAULT_CHANNEL,
+    )
 
     archivo_guion = (
         Path(argumentos.guion)
@@ -1213,6 +1431,9 @@ def generar_plan_visual(argumentos: argparse.Namespace) -> None:
         contenido_guion=contenido_guion,
         manifiesto=manifiesto,
     )
+
+    resultado["channel_slug"] = canal_slug
+    resultado["plan_visual"]["channel_slug"] = canal_slug
 
     ruta_resultado = planificador.guardar(
         resultado=resultado,
@@ -1277,6 +1498,11 @@ def descargar_recursos(argumentos: argparse.Namespace) -> None:
         contenido_plan=contenido_plan,
         ruta_plan=ruta_plan,
         limite=argumentos.limite,
+        channel_slug=getattr(
+            argumentos,
+            "canal",
+            DEFAULT_CHANNEL,
+        ),
     )
 
     resumen = resultado["resumen"]
@@ -1287,8 +1513,20 @@ def descargar_recursos(argumentos: argparse.Namespace) -> None:
         f"{resumen['descargados']}"
     )
     print(
+        f"Recursos de stock aprobados: "
+        f"{resumen.get('descargados_stock', resumen['descargados'])}"
+    )
+    print(
+        f"Imagenes documentales generadas con Workers AI: "
+        f"{resumen.get('generados_ia', 0)}"
+    )
+    print(
         f"Pendientes de generación local: "
         f"{resumen['pendientes_generacion']}"
+    )
+    print(
+        f"Pendientes sin recurso coincidente: "
+        f"{resumen.get('pendientes_sin_recurso', 0)}"
     )
     print(
         f"Omitidos por el límite: "
@@ -1303,6 +1541,49 @@ def descargar_recursos(argumentos: argparse.Namespace) -> None:
         f"{resultado['manifiesto']}"
     )
     print("=" * 72)
+
+    pendientes_sin_recurso = int(
+        resumen.get(
+            "pendientes_sin_recurso",
+            0,
+        )
+    )
+
+    pendientes_cuota_ia = int(
+        resumen.get(
+            "pendientes_cuota_imagen_ia",
+            0,
+        )
+    )
+
+    if pendientes_cuota_ia:
+        raise RuntimeError(
+            "COBERTURA VISUAL INCOMPLETA: "
+            f"{pendientes_cuota_ia} clips no pudieron cubrirse con "
+            "stock, cache, Drive, reutilizacion contextual ni el "
+            "generador opcional. Cloudflare no es un requisito para "
+            "producir; el bloqueo indica ausencia real de cobertura."
+        )
+
+    if bool(resumen.get("recoleccion_detenida", False)):
+        raise RuntimeError(
+            "PAUSA SEGURA DEL CONTROL VISUAL: la recoleccion se "
+            "detuvo antes de completar todos los clips. Motivo: "
+            + str(
+                resumen.get(
+                    "motivo_detencion",
+                    "verificacion visual no disponible",
+                )
+            )
+        )
+
+    if pendientes_sin_recurso:
+        raise RuntimeError(
+            "CONTROL EDITORIAL VISUAL: "
+            f"{pendientes_sin_recurso} clips no tienen una imagen "
+            "o video que coincida con la narracion. El pipeline se "
+            "detuvo antes del render y no genero graficos de relleno."
+        )
 
 
 def generar_recursos_locales(argumentos: argparse.Namespace) -> None:
@@ -1319,6 +1600,24 @@ def generar_recursos_locales(argumentos: argparse.Namespace) -> None:
         output_dir=settings.output_dir,
         archivo=archivo,
     )
+
+    canal_slug = getattr(
+        argumentos,
+        "canal",
+        DEFAULT_CHANNEL,
+    )
+    canal_manifiesto = str(
+        manifiesto.get(
+            "channel_slug",
+            canal_slug,
+        )
+    )
+
+    if canal_manifiesto != canal_slug:
+        raise RuntimeError(
+            "BLOQUEO MULTICANAL: la coleccion visual pertenece a "
+            f"{canal_manifiesto}, no a {canal_slug}."
+        )
 
     print("\nGENERADOR DE RECURSOS LOCALES")
     print("=" * 72)
@@ -1372,6 +1671,95 @@ def generar_recursos_locales(argumentos: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def gestionar_cache_visual(argumentos: argparse.Namespace) -> None:
+    """Guarda, restaura o libera recursos visuales con Google Drive."""
+    import subprocess
+    import sys
+
+    project_root = Path(__file__).resolve().parents[2]
+    herramienta = project_root / "tools" / "google_drive_visual_cache.py"
+
+    if not herramienta.is_file():
+        raise FileNotFoundError(
+            "No existe el gestor del cache visual: "
+            f"{herramienta}"
+        )
+
+    comando = [
+        sys.executable,
+        str(herramienta),
+        argumentos.accion,
+        "--canal",
+        getattr(argumentos, "canal", DEFAULT_CHANNEL),
+    ]
+
+    manifiesto = getattr(argumentos, "manifiesto", None)
+    if manifiesto:
+        comando.extend(["--manifiesto", str(manifiesto)])
+
+    if (
+        argumentos.accion != "status"
+        and getattr(argumentos, "dry_run", False)
+    ):
+        comando.append("--dry-run")
+
+    if (
+        argumentos.accion == "cleanup"
+        and getattr(argumentos, "confirmar", False)
+    ):
+        comando.append("--confirmar")
+
+    subprocess.run(
+        comando,
+        cwd=project_root,
+        check=True,
+    )
+
+
+def generar_timeline_semantica(
+    argumentos: argparse.Namespace,
+) -> None:
+    """Genera la fuente temporal unica de narracion y visuales."""
+    settings = load_settings()
+    assets_path = (
+        Path(argumentos.assets)
+        if argumentos.assets
+        else None
+    )
+    audio_path = (
+        Path(argumentos.audio)
+        if argumentos.audio
+        else None
+    )
+    channel_slug = getattr(
+        argumentos,
+        "canal",
+        DEFAULT_CHANNEL,
+    )
+
+    print("\nTIMELINE SEMANTICA")
+    print("=" * 72)
+    print(f"Canal: {channel_slug}")
+    print("Validando cobertura temporal y recursos...")
+
+    result = GeneradorTimelineSemantica(
+        output_dir=settings.output_dir,
+    ).generar(
+        assets_path=assets_path,
+        audio_path=audio_path,
+        channel_slug=channel_slug,
+    )
+
+    print(f"Eventos sincronizados: {result['events']}")
+    print(
+        "Duracion cubierta: "
+        f"{result['duration_ms'] / 1000:.3f} segundos"
+    )
+    print(f"Timeline: {result['path']}")
+    print("Estado: APROBADA")
+    print("=" * 72)
+
+
 def renderizar_video(argumentos: argparse.Namespace) -> None:
     """Renderiza una vista previa o el video completo."""
     settings = load_settings()
@@ -1387,6 +1775,32 @@ def renderizar_video(argumentos: argparse.Namespace) -> None:
         if argumentos.audio
         else None
     )
+
+    import subprocess
+    import sys
+
+    project_root = Path(__file__).resolve().parents[2]
+    restaurador = project_root / "tools" / "google_drive_visual_cache.py"
+
+    if restaurador.is_file():
+        comando_restaurar = [
+            sys.executable,
+            str(restaurador),
+            "restore",
+            "--canal",
+            getattr(argumentos, "canal", DEFAULT_CHANNEL),
+        ]
+
+        if archivo_assets is not None:
+            comando_restaurar.extend(
+                ["--manifiesto", str(archivo_assets)]
+            )
+
+        subprocess.run(
+            comando_restaurar,
+            cwd=project_root,
+            check=True,
+        )
 
     (
         assets,
@@ -1538,6 +1952,8 @@ def generar_insights_analitica(
     comando = [
         sys.executable,
         str(herramienta),
+        "--canal",
+        getattr(argumentos, "canal", "nexon_ia"),
     ]
 
     reporte = getattr(
@@ -1573,6 +1989,7 @@ def generar_experimento(
 
     gestor = GestorExperimentosYouTube(
         project_root=project_root,
+        channel_slug=getattr(argumentos, "canal", DEFAULT_CHANNEL),
     )
 
     resultado = gestor.generar(
@@ -1669,6 +2086,7 @@ def registrar_resultado_experimento(
 
     gestor = GestorExperimentosYouTube(
         project_root=project_root,
+        channel_slug=getattr(argumentos, "canal", DEFAULT_CHANNEL),
     )
 
     resultado = gestor.registrar_resultado(
@@ -1776,6 +2194,8 @@ def generar_analitica(argumentos: argparse.Namespace) -> None:
         str(argumentos.dias),
         "--max-videos",
         str(argumentos.max_videos),
+        "--canal",
+        getattr(argumentos, "canal", "nexon_ia"),
     ]
 
     subprocess.run(
@@ -1790,6 +2210,7 @@ def generar_analitica(argumentos: argparse.Namespace) -> None:
     generar_insights_analitica(
         argparse.Namespace(
             reporte=None,
+            canal=getattr(argumentos, "canal", "nexon_ia"),
         )
     )
 
@@ -1870,6 +2291,7 @@ def ejecutar_guardian_automatico(
 
     guardian = GuardianPipeline(
         project_root=project_root,
+        channel_slug=argumentos.canal,
     )
 
     resultado = guardian.ejecutar(
@@ -1913,6 +2335,7 @@ def gestionar_programador_windows(
 
     programador = ProgramadorWindows(
         project_root=project_root,
+        channel_slug=argumentos.canal,
     )
 
     if argumentos.accion == "instalar":
@@ -2211,6 +2634,8 @@ def gestionar_cola_publicacion(
         sys.executable,
         str(herramienta),
         accion,
+        "--canal",
+        getattr(argumentos, "canal", "nexon_ia"),
     ]
 
     if (
@@ -2229,7 +2654,11 @@ def gestionar_cola_publicacion(
 def generar_shorts(argumentos: argparse.Namespace) -> None:
     """Genera Shorts verticales desde el documental mas reciente."""
     project_root = Path(__file__).resolve().parents[2]
-    generador = GeneradorShorts(project_root=project_root)
+    canal_slug = getattr(argumentos, "canal", DEFAULT_CHANNEL)
+    generador = GeneradorShorts(
+        project_root=project_root,
+        channel_slug=canal_slug,
+    )
     resultado = generador.generar(
         cantidad=argumentos.cantidad,
         duracion_objetivo=argumentos.duracion,
@@ -2268,16 +2697,47 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
     from pathlib import Path
 
     project_root = Path(__file__).resolve().parents[2]
+    canal_slug = getattr(
+        argumentos,
+        "canal",
+        DEFAULT_CHANNEL,
+    )
+    profile = channel_profile(canal_slug)
+    nombre_canal = profile["display_name"]
+    argumentos.nicho = resolve_niche(
+        canal_slug,
+        argumentos.nicho,
+    )
 
     import json
     import time
     from datetime import datetime
 
-    ruta_estado = (
+    migrate_legacy_pipeline_state(
         project_root
-        / "data"
-        / "pipeline_state.json"
     )
+
+    ruta_estado = pipeline_state_path(
+        project_root,
+        canal_slug,
+    )
+
+    otros_pendientes = incomplete_other_channel_states(
+        project_root,
+        canal_slug,
+    )
+
+    if otros_pendientes:
+        canales = ", ".join(
+            item["canal"]
+            for item in otros_pendientes
+        )
+        raise RuntimeError(
+            "No se puede iniciar este canal mientras existe "
+            "otra produccion incompleta: "
+            f"{canales}. Reanuda y finaliza primero ese canal; "
+            "los recursos de produccion aun son compartidos."
+        )
 
     estado: dict[str, object] = {
         "completado": False,
@@ -2301,8 +2761,14 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
             "voz": argumentos.voz,
             "velocidad": argumentos.velocidad,
             "tono": argumentos.tono,
+            "canal": canal_slug,
         },
     }
+
+    print(
+        f"Canal de YouTube seleccionado: "
+        f"{nombre_canal} ({canal_slug})"
+    )
 
     if argumentos.reanudar and ruta_estado.is_file():
         try:
@@ -2312,8 +2778,35 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
                 )
             )
 
-            if isinstance(cargado, dict):
+            parametros_cargados = (
+                cargado.get(
+                    "parametros",
+                    {},
+                )
+                if isinstance(cargado, dict)
+                else {}
+            )
+            canal_cargado = str(
+                parametros_cargados.get(
+                    "canal",
+                    canal_slug,
+                )
+                if isinstance(
+                    parametros_cargados,
+                    dict,
+                )
+                else canal_slug
+            )
+
+            if (
+                isinstance(cargado, dict)
+                and canal_cargado == canal_slug
+            ):
                 estado = cargado
+            else:
+                raise ValueError(
+                    "El estado pertenece a otro canal."
+                )
 
             print(
                 "Reanudaci?n activada. "
@@ -2358,6 +2851,55 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
         "ejecuciones_pasos",
         [],
     )
+
+    if (
+        argumentos.reanudar
+        and getattr(
+            argumentos,
+            "regenerar_visuales",
+            False,
+        )
+    ):
+        pasos_visuales = {
+            "Creaci?n del plan visual",
+            "Descarga de recursos",
+            "Generaci?n de recursos locales",
+            "Generacion de timeline semantica",
+            "Archivo visual en Google Drive",
+            "Renderizado del video",
+            "Generaci?n de subt?tulos",
+        }
+
+        completados = estado.get(
+            "pasos_completados",
+            [],
+        )
+
+        if isinstance(completados, list):
+            estado["pasos_completados"] = [
+                paso
+                for paso in completados
+                if paso not in pasos_visuales
+            ]
+
+        duraciones = estado.get(
+            "duraciones_pasos",
+            {},
+        )
+
+        if isinstance(duraciones, dict):
+            for paso in pasos_visuales:
+                duraciones.pop(paso, None)
+
+        estado["completado"] = False
+        estado["finalizado_en"] = ""
+        estado["paso_actual"] = ""
+        estado["ultimo_error"] = ""
+
+        print(
+            "Regeneracion visual activada. Se conservaran "
+            "las ideas, el guion corregido y la narracion."
+        )
 
     def guardar_estado() -> None:
         estado["actualizado_en"] = (
@@ -2557,6 +3099,8 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
                     argumentos.nicho,
                     "--cantidad",
                     str(argumentos.cantidad_ideas),
+                    "--canal",
+                    canal_slug,
                 ],
             ),
             (
@@ -2565,6 +3109,8 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
                     "script",
                     "--indice",
                     str(argumentos.indice),
+                    "--canal",
+                    canal_slug,
                 ],
             ),
             (
@@ -2573,6 +3119,8 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
                     "script-fix",
                     "--ppm",
                     "145",
+                    "--canal",
+                    canal_slug,
                 ],
             ),
             (
@@ -2597,6 +3145,8 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
                 "Creaci?n del plan visual",
                 [
                     "visual-plan",
+                    "--canal",
+                    canal_slug,
                 ],
             ),
             (
@@ -2605,18 +3155,41 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
                     "assets",
                     "--limite",
                     "0",
+                    "--canal",
+                    canal_slug,
                 ],
             ),
             (
                 "Generaci?n de recursos locales",
                 [
                     "local-assets",
+                    "--canal",
+                    canal_slug,
+                ],
+            ),
+            (
+                "Generacion de timeline semantica",
+                [
+                    "timeline",
+                    "--canal",
+                    canal_slug,
+                ],
+            ),
+            (
+                "Archivo visual en Google Drive",
+                [
+                    "visual-cache",
+                    "store",
+                    "--canal",
+                    canal_slug,
                 ],
             ),
             (
                 "Renderizado del video",
                 [
                     "render",
+                    "--canal",
+                    canal_slug,
                 ],
             ),
             (
@@ -2634,7 +3207,7 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
 
     print()
     print("#" * 72)
-    print("NEXON IA - PRODUCCI?N AUTOM?TICA")
+    print(f"{nombre_canal.upper()} - PRODUCCION AUTOMATICA")
     print("#" * 72)
     print("Nicho:", argumentos.nicho)
     print("Idea seleccionada:", argumentos.indice)
@@ -2685,14 +3258,25 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
         "GENERADO" if video_generado else "REUTILIZADO",
     )
 
+    print("2/6 Generando metadata y capitulos de YouTube...")
+    generador_metadata = GeneradorMetadataYouTube(
+        project_root=project_root,
+        channel_slug=canal_slug,
+    )
+    metadata, metadata_path = generador_metadata.generar()
+    print("Titulo:", metadata["title"])
+    print("Metadata:", metadata_path)
 
+
+    manifiesto_shorts_drive: Path | None = None
 
     if argumentos.sin_shorts:
-        print("2/6 Shorts omitidos por --sin-shorts.")
+        print("3/6 Shorts omitidos por --sin-shorts.")
     else:
-        print("2/6 Generando Shorts verticales...")
+        print("3/6 Generando Shorts verticales...")
         resultado_shorts = GeneradorShorts(
             project_root=project_root,
+            channel_slug=canal_slug,
         ).generar(
             cantidad=argumentos.cantidad_shorts,
             duracion_objetivo=argumentos.duracion_short,
@@ -2706,18 +3290,18 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
             "Manifiesto de Shorts:",
             resultado_shorts["manifiesto"],
         )
-
-    print("3/6 Generando metadata y capitulos de YouTube...")
-    generador_metadata = GeneradorMetadataYouTube(
-        project_root=project_root,
-    )
-    metadata, metadata_path = generador_metadata.generar()
-    print("Titulo:", metadata["title"])
-    print("Metadata:", metadata_path)
+        manifiesto_shorts_drive = Path(
+            str(
+                resultado_shorts[
+                    "manifiesto"
+                ]
+            )
+        ).resolve()
 
     print("4/6 Generando miniatura automatica...")
     generador_miniatura = GeneradorMiniaturaYouTube(
         project_root=project_root,
+        channel_slug=canal_slug,
     )
     miniatura, miniatura_generada = generador_miniatura.generar()
     print(
@@ -2773,12 +3357,48 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
             f"{respaldo_drive}"
         )
 
+    candidatos_subtitulos_drive = list(
+        project_root.glob(
+            "output/subtitles/subtitulos_*/subtitulos.srt"
+        )
+    )
+
+    if not candidatos_subtitulos_drive:
+        raise FileNotFoundError(
+            "No se encontraron subtitulos para el respaldo."
+        )
+
+    subtitulos_drive = max(
+        candidatos_subtitulos_drive,
+        key=lambda ruta: ruta.stat().st_mtime,
+    ).resolve()
+
     def respaldar_produccion_drive() -> None:
+        comando_respaldo = [
+            sys.executable,
+            str(respaldo_drive),
+            "--canal",
+            canal_slug,
+            "--video",
+            str(Path(video_final).resolve()),
+            "--miniatura",
+            str(Path(miniatura).resolve()),
+            "--subtitulos",
+            str(subtitulos_drive),
+            "--metadata",
+            str(Path(metadata_path).resolve()),
+        ]
+
+        if manifiesto_shorts_drive is not None:
+            comando_respaldo.extend(
+                [
+                    "--manifiesto-shorts",
+                    str(manifiesto_shorts_drive),
+                ]
+            )
+
         subprocess.run(
-            [
-                sys.executable,
-                str(respaldo_drive),
-            ],
+            comando_respaldo,
             cwd=project_root,
             check=True,
         )
@@ -2807,6 +3427,8 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
                 sys.executable,
                 str(gestor_cola),
                 "sync",
+                "--canal",
+                canal_slug,
             ],
             cwd=project_root,
             check=True,
@@ -2818,12 +3440,17 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
     if argumentos.sin_publicar:
         print("5/6 YouTube omitido por --sin-publicar.")
     else:
-        print("5/6 Publicando documental en YouTube como PRIVADO...")
+        print(
+            "5/6 Publicando documental en "
+            f"{nombre_canal} como PRIVADO..."
+        )
         publicador = project_root / "tools" / "youtube_publish_all.py"
         subprocess.run(
             [
                 sys.executable,
                 str(publicador),
+                "--canal",
+                canal_slug,
             ],
             cwd=project_root,
             check=True,
@@ -2842,7 +3469,7 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
         )
     else:
         print(
-            "6/6 Publicando Shorts en YouTube "
+            f"6/6 Publicando Shorts en {nombre_canal} "
             "como PRIVADOS..."
         )
 
@@ -2862,6 +3489,8 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
             [
                 sys.executable,
                 str(publicador_shorts),
+                "--canal",
+                canal_slug,
             ],
             cwd=project_root,
             check=True,
@@ -2874,6 +3503,45 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
             "en Google Drive..."
         )
         respaldar_produccion_drive()
+
+    if getattr(argumentos, "conservar_visuales_locales", False):
+        print(
+            "Recursos visuales locales conservados por "
+            "--conservar-visuales-locales."
+        )
+        estado["cache_visual_local"] = "conservado"
+    else:
+        print(
+            "Liberando recursos visuales locales despues "
+            "de verificar Google Drive..."
+        )
+        herramienta_cache_visual = (
+            project_root / "tools" / "google_drive_visual_cache.py"
+        )
+
+        try:
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(herramienta_cache_visual),
+                    "cleanup",
+                    "--canal",
+                    canal_slug,
+                    "--confirmar",
+                ],
+                cwd=project_root,
+                check=True,
+            )
+            estado["cache_visual_local"] = "liberado"
+
+        except Exception as error_cache:
+            estado["cache_visual_local"] = "conservado_por_error"
+            estado["aviso_cache_visual"] = str(error_cache)
+            print(
+                "ADVERTENCIA: no se pudo liberar el cache visual local. "
+                "Los archivos se conservaron para evitar cualquier perdida."
+            )
+            print(f"Detalle: {error_cache}")
 
     estado["completado"] = True
     estado["paso_actual"] = ""
@@ -2897,7 +3565,10 @@ def ejecutar_pipeline(argumentos: argparse.Namespace) -> None:
     if argumentos.sin_publicar:
         print("YouTube: OMITIDO por --sin-publicar")
     else:
-        print("YouTube: video subido en PRIVADO para revision.")
+        print(
+            f"YouTube ({nombre_canal}): video subido "
+            "en PRIVADO para revision."
+        )
 
 
 
@@ -3001,6 +3672,14 @@ def main() -> None:
 
         if argumentos.comando == "local-assets":
             generar_recursos_locales(argumentos)
+            return
+
+        if argumentos.comando == "timeline":
+            generar_timeline_semantica(argumentos)
+            return
+
+        if argumentos.comando == "visual-cache":
+            gestionar_cache_visual(argumentos)
             return
 
         if argumentos.comando == "tutorial-capture":

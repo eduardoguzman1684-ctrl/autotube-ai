@@ -1,4 +1,4 @@
-﻿.venv/
+.venv/
 __pycache__/
 *.py[cod]
 *.log
@@ -25,3 +25,6 @@ config/edge_tutorial_profile/
 config/youtube/analytics_token.json
 data/analytics/*.json
 config/google_drive/token.json
+config/youtube/channels/*/token.json
+config/youtube/channels/*/channel.json
+config/youtube/channels/*/analytics_token.json

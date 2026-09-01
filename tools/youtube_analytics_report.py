@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -6,14 +6,19 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from youtube_channels import (
+    CHANNEL_CHOICES,
+    DEFAULT_CHANNEL,
+    channel_profile,
+    load_credentials,
+    verify_channel,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
-TOKEN_FILE = ROOT / "config" / "youtube" / "analytics_token.json"
 OUTPUT_DIR = ROOT / "data" / "analytics"
 
 SCOPES = [
@@ -22,31 +27,12 @@ SCOPES = [
 ]
 
 
-def credenciales() -> Credentials:
-    if not TOKEN_FILE.exists():
-        raise FileNotFoundError(
-            "No existe analytics_token.json. "
-            "Ejecuta tools/youtube_analytics_auth.py."
-        )
-
-    creds = Credentials.from_authorized_user_file(
-        str(TOKEN_FILE),
+def credenciales(channel_slug: str):
+    return load_credentials(
+        channel_slug,
         SCOPES,
+        analytics=True,
     )
-
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        TOKEN_FILE.write_text(
-            creds.to_json(),
-            encoding="utf-8",
-        )
-
-    if not creds.valid:
-        raise RuntimeError(
-            "Las credenciales de YouTube Analytics no son validas."
-        )
-
-    return creds
 
 
 def convertir_filas(respuesta: dict[str, Any]) -> list[dict[str, Any]]:
@@ -169,7 +155,13 @@ def main() -> int:
         default=50,
         help="Cantidad maxima de videos en el informe.",
     )
+    parser.add_argument(
+        "--canal",
+        choices=CHANNEL_CHOICES,
+        default=DEFAULT_CHANNEL,
+    )
     args = parser.parse_args()
+    profile = channel_profile(args.canal)
 
     dias = max(1, min(args.dias, 3650))
     max_videos = max(1, min(args.max_videos, 200))
@@ -177,7 +169,7 @@ def main() -> int:
     fin = date.today() - timedelta(days=1)
     inicio = fin - timedelta(days=dias - 1)
 
-    creds = credenciales()
+    creds = credenciales(args.canal)
 
     analytics = build(
         "youtubeAnalytics",
@@ -191,6 +183,11 @@ def main() -> int:
         "v3",
         credentials=creds,
         cache_discovery=False,
+    )
+
+    identity = verify_channel(
+        youtube,
+        args.canal,
     )
 
     canal = informacion_canal(youtube)
@@ -322,6 +319,8 @@ def main() -> int:
         .astimezone()
         .isoformat(timespec="seconds"),
         "fuente": "YouTube Analytics API v2",
+        "channel_slug": args.canal,
+        "channel_identity": identity,
         "periodo": {
             "inicio": inicio.isoformat(),
             "fin": fin.isoformat(),
@@ -333,13 +332,19 @@ def main() -> int:
         "videos": videos,
     }
 
-    OUTPUT_DIR.mkdir(
+    output_dir = (
+        OUTPUT_DIR
+        if args.canal == DEFAULT_CHANNEL
+        else OUTPUT_DIR / args.canal
+    )
+
+    output_dir.mkdir(
         parents=True,
         exist_ok=True,
     )
 
     salida = (
-        OUTPUT_DIR
+        output_dir
         / (
             "youtube_analytics_"
             + datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -357,7 +362,10 @@ def main() -> int:
     )
 
     print()
-    print("YOUTUBE ANALYTICS - NEXON IA")
+    print(
+        "YOUTUBE ANALYTICS - "
+        f"{profile['display_name'].upper()}"
+    )
     print("=" * 64)
     print(f"Canal: {canal['titulo']}")
     print(f"Periodo: {inicio} a {fin}")

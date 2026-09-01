@@ -6,11 +6,17 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from autotube.content.channel_profiles import (
+    DEFAULT_CHANNEL,
+    channel_profile,
+    normalize_channel_slug,
+)
+
 
 class ProgramadorWindows:
     """Instala y administra la tarea automatica de AutoTube."""
 
-    NOMBRE_TAREA = "AutoTube AI - Guardian"
+    PREFIJO_TAREA = "AutoTube AI - Guardian"
 
     DIAS = {
         "lunes": "MON",
@@ -34,26 +40,42 @@ class ProgramadorWindows:
     def __init__(
         self,
         project_root: Path,
+        channel_slug: str = DEFAULT_CHANNEL,
     ) -> None:
         self.project_root = Path(
             project_root
         ).resolve()
 
+        self.channel_slug = normalize_channel_slug(
+            channel_slug
+        )
+        self.channel_name = str(
+            channel_profile(
+                self.channel_slug
+            )["display_name"]
+        )
+        self.task_name = (
+            f"{self.PREFIJO_TAREA} - "
+            f"{self.channel_name}"
+        )
+
         self.automation_dir = (
             self.project_root
             / "data"
             / "automation"
+            / "channels"
+            / self.channel_slug
         )
 
         self.launcher_path = (
             self.automation_dir
-            / "autotube_guardian.cmd"
+            / f"autotube_guardian_{self.channel_slug}.cmd"
         )
 
         self.log_path = (
             self.project_root
             / "logs"
-            / "guardian_task.log"
+            / f"guardian_{self.channel_slug}.log"
         )
 
     @staticmethod
@@ -163,7 +185,9 @@ class ProgramadorWindows:
                 (
                     '"'
                     + str(autotube)
-                    + '" guardian-run '
+                    + '" guardian-run --canal '
+                    + self.channel_slug
+                    + ' '
                     + '>> "'
                     + str(
                         self.log_path
@@ -214,7 +238,7 @@ class ProgramadorWindows:
             "schtasks",
             "/Create",
             "/TN",
-            self.NOMBRE_TAREA,
+            self.task_name,
             "/TR",
             str(
                 self.launcher_path
@@ -245,6 +269,8 @@ class ProgramadorWindows:
 
         resultado: dict[str, Any] = {
             "accion": "instalar",
+            "canal": self.channel_slug,
+            "nombre_canal": self.channel_name,
             "confirmado": confirmar,
             "instalado": False,
             "hora": self.validar_hora(
@@ -253,7 +279,7 @@ class ProgramadorWindows:
             "dias": self.normalizar_dias(
                 dias
             ),
-            "tarea": self.NOMBRE_TAREA,
+            "tarea": self.task_name,
             "lanzador": str(
                 self.launcher_path
             ),
@@ -317,7 +343,9 @@ class ProgramadorWindows:
         self,
     ) -> dict[str, Any]:
         resultado: dict[str, Any] = {
-            "tarea": self.NOMBRE_TAREA,
+            "canal": self.channel_slug,
+            "nombre_canal": self.channel_name,
+            "tarea": self.task_name,
             "instalada": False,
             "codigo_salida": None,
             "salida": "",
@@ -337,7 +365,7 @@ class ProgramadorWindows:
                     "schtasks",
                     "/Query",
                     "/TN",
-                    self.NOMBRE_TAREA,
+                    self.task_name,
                     "/FO",
                     "LIST",
                     "/V",
@@ -384,15 +412,17 @@ class ProgramadorWindows:
             "schtasks",
             "/Delete",
             "/TN",
-            self.NOMBRE_TAREA,
+            self.task_name,
             "/F",
         ]
 
         resultado: dict[str, Any] = {
             "accion": "eliminar",
+            "canal": self.channel_slug,
+            "nombre_canal": self.channel_name,
             "confirmado": confirmar,
             "eliminada": False,
-            "tarea": self.NOMBRE_TAREA,
+            "tarea": self.task_name,
             "comando": comando,
             "codigo_salida": None,
             "salida": "",
@@ -459,6 +489,11 @@ class ProgramadorWindows:
         print(
             "Tarea:",
             resultado["tarea"],
+        )
+        print(
+            "Canal:",
+            f"{resultado['nombre_canal']} "
+            f"({resultado['canal']})",
         )
         print(
             "Horario:",
