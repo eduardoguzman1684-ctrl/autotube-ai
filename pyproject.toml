@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autotube-ai"
-version = "0.3.3"
+version = "0.3.4"
 description = "Sistema automatizado para producir contenido de YouTube con inteligencia artificial"
 requires-python = ">=3.12,<3.13"
 dependencies = [

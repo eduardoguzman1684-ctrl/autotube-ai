@@ -1,0 +1,56 @@
+AUTOTUBE AI - CONTRATOS HISTORICOS DIRIGIDOS V2.4
+=================================================
+
+CAUSA CORREGIDA
+---------------
+La auditoria real demostro que varios clips antiguos contenian descripcion y
+narracion, pero tenian vacios concepto_central, criterios_obligatorios,
+elementos_prohibidos y consultas_alternativas. La busqueda general devolvia
+stock moderno, videos sin relacion y candidatos semanticamente debiles.
+
+MEJORAS
+-------
+1. Completa automaticamente concepto, criterios y prohibiciones cuando faltan.
+2. Detecta solicitudes explicitas de texto animado y las convierte a generacion
+   local, sin buscar una fotografia de stock.
+3. Genera consultas documentales en ingles para:
+   - investigadores de Dartmouth de 1956;
+   - computadoras centrales y operadores de los anos cincuenta;
+   - lectoras de tarjetas perforadas;
+   - John McCarthy en una pizarra;
+   - cientificos analizando diagramas de flujo;
+   - propuesta original de Dartmouth de 1955.
+4. Prohibe tecnologia moderna y stock contemporaneo en escenas historicas.
+5. Prohibe presentar ilustraciones ficticias como fotografias reales.
+6. Para archivo historico, prefiere una imagen exacta con Ken Burns antes que
+   un video sin relacion directa.
+7. Conserva cualquier criterio editorial existente; solo completa lo ausente.
+
+VALIDACION PREVIA A UNA NUEVA REPARACION
+----------------------------------------
+No ejecutar otra busqueda mientras Gemini o DNS esten agotados. Primero usar:
+
+autotube gemini-test
+
+Resolve-DnsName commons.wikimedia.org
+Resolve-DnsName api.openverse.org
+Resolve-DnsName pixabay.com
+
+Solo continuar cuando Gemini responda y las tres resoluciones DNS sean
+correctas.
+
+AUDITORIA ACTUAL PARA EL CASO REAL
+----------------------------------
+C:\Users\eduar\Documents\autotube-ai\output\visual_audits\audit_20260901_060124_054215\visual_audit.json
+
+PRUEBAS NUEVAS
+--------------
+python -m unittest -v tests.test_visual_contract_v2_4
+
+VERSIONADO RECOMENDADO
+----------------------
+Commit:
+fix: completar contratos historicos y consultas dirigidas v2.4
+
+Etiqueta:
+contratos-historicos-v2.4

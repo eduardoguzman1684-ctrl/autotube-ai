@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 import shutil
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -14,7 +16,7 @@ from autotube.visuals.final_visual_auditor import (
 )
 
 
-REPAIR_VERSION = "visual_repair_v1"
+REPAIR_VERSION = "visual_repair_v2"
 
 
 class VisualRepairError(RuntimeError):
@@ -62,9 +64,184 @@ def _available(element: dict[str, Any]) -> bool:
     )
 
 
+def _normalized(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(character for character in text if not unicodedata.combining(character))
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def _append_unique(values: list[str], *new_values: str) -> list[str]:
+    seen = {_normalized(value) for value in values if str(value).strip()}
+    for value in new_values:
+        cleaned = str(value).strip()
+        identity = _normalized(cleaned)
+        if cleaned and identity and identity not in seen:
+            values.append(cleaned)
+            seen.add(identity)
+    return values
+
+
+def _directed_historical_queries(element: dict[str, Any]) -> list[str]:
+    """Produce consultas documentales precisas sin depender de otro LLM."""
+    context = _normalized(
+        " ".join(
+            str(element.get(key, ""))
+            for key in (
+                "texto_pantalla",
+                "descripcion",
+                "concepto_central",
+                "texto_narrado",
+            )
+        )
+    )
+    queries: list[str] = []
+
+    if "john mccarthy" in context:
+        _append_unique(
+            queries,
+            "John McCarthy computer scientist blackboard photograph",
+            "John McCarthy Stanford blackboard archive",
+            "John McCarthy artificial intelligence historical photograph",
+        )
+
+    if "tarjeta" in context and "perforad" in context:
+        _append_unique(
+            queries,
+            "1950s punch card reader operator historical photograph",
+            "IBM 711 punched card reader 1950s archive",
+            "IBM punched card machine computer room operator",
+        )
+
+    if (
+        ("computadora central" in context or "maquina" in context)
+        and ("1950" in context or "anos cincuenta" in context)
+    ):
+        _append_unique(
+            queries,
+            "1950s mainframe computer operators historical photograph",
+            "IBM 704 computer operators 1950s archive",
+            "UNIVAC computer room operators 1950s photograph",
+        )
+
+    if "diagrama" in context and "flujo" in context:
+        _append_unique(
+            queries,
+            "1950s computer scientists flowchart office historical photograph",
+            "early computer programmers flowchart paper 1950s archive",
+            "computer researchers continuous paper diagram 1950s",
+        )
+
+    if "dartmouth" in context and (
+        "propuesta" in context or "manifiesto" in context or "documento" in context
+    ):
+        _append_unique(
+            queries,
+            "Dartmouth proposal artificial intelligence 1955 original document",
+            "Dartmouth Summer Research Project on Artificial Intelligence proposal scan",
+            "John McCarthy Dartmouth proposal 1955 document",
+        )
+    elif "dartmouth" in context and (
+        "investigador" in context or "1956" in context or "fundador" in context
+    ):
+        _append_unique(
+            queries,
+            "1956 Dartmouth artificial intelligence workshop participants archive",
+            "Dartmouth Summer Research Project Artificial Intelligence 1956 researchers",
+            "John McCarthy Marvin Minsky Claude Shannon Nathaniel Rochester 1956",
+        )
+
+    screen_text = str(element.get("texto_pantalla", "")).strip()
+    if screen_text:
+        _append_unique(queries, f"{screen_text} historical archive")
+    return queries
+
+
+def _enrich_contract(element: dict[str, Any]) -> dict[str, Any]:
+    """Completa contratos vacios y conserva cualquier criterio editorial previo."""
+    enriched = copy.deepcopy(element)
+    description = str(enriched.get("descripcion", "")).strip()
+    context = _normalized(
+        " ".join(
+            (
+                description,
+                str(enriched.get("texto_pantalla", "")),
+                str(enriched.get("texto_narrado", "")),
+            )
+        )
+    )
+
+    if not str(enriched.get("concepto_central", "")).strip():
+        enriched["concepto_central"] = description
+
+    criteria = enriched.get("criterios_obligatorios", [])
+    criteria = (
+        [str(value).strip() for value in criteria if str(value).strip()]
+        if isinstance(criteria, list)
+        else []
+    )
+    if description:
+        _append_unique(criteria, description)
+    screen_text = str(enriched.get("texto_pantalla", "")).strip()
+    if "texto animado" in context and screen_text:
+        _append_unique(
+            criteria,
+            f'El texto visible debe decir exactamente: "{screen_text}".',
+            "La tipografia debe ser legible, central y ocupar el foco de la composicion.",
+        )
+        enriched["tipo_recurso"] = "texto_animado"
+    enriched["criterios_obligatorios"] = criteria
+
+    forbidden = enriched.get("elementos_prohibidos", [])
+    forbidden = (
+        [str(value).strip() for value in forbidden if str(value).strip()]
+        if isinstance(forbidden, list)
+        else []
+    )
+    _append_unique(
+        forbidden,
+        "Contenido generico sin relacion directa con la narracion.",
+    )
+    historical = any(
+        token in context
+        for token in (
+            "archivo",
+            "1950",
+            "1955",
+            "1956",
+            "anos cincuenta",
+            "historica",
+        )
+    )
+    if historical:
+        _append_unique(
+            forbidden,
+            "Tecnologia, ropa, oficinas o infraestructura modernas.",
+            "Fotografia de stock contemporanea presentada como archivo historico.",
+        )
+    if "fotografia real" in context or "archivo real" in context:
+        _append_unique(
+            forbidden,
+            "Ilustracion ficticia presentada como una fotografia real.",
+        )
+    enriched["elementos_prohibidos"] = forbidden
+
+    alternatives = enriched.get("consultas_alternativas", [])
+    alternatives = (
+        [str(value).strip() for value in alternatives if str(value).strip()]
+        if isinstance(alternatives, list)
+        else []
+    )
+    alternatives = _append_unique(
+        alternatives,
+        *_directed_historical_queries(enriched),
+    )
+    enriched["consultas_alternativas"] = alternatives
+    return enriched
+
+
 def _repair_clip(element: dict[str, Any], round_number: int) -> dict[str, Any]:
     """Reconstruye un clip sin reutilizar metadata de la descarga rechazada."""
-    clip = copy.deepcopy(element)
+    clip = _enrich_contract(element)
     for key in (
         "archivo",
         "estado",
@@ -86,7 +263,11 @@ def _repair_clip(element: dict[str, Any], round_number: int) -> dict[str, Any]:
 
     original_type = str(clip.get("tipo_recurso", ""))
     clip["orden"] = int(clip.get("clip_orden", 0) or 0)
-    if round_number >= 2 and original_type == "video_stock":
+    historical = any(
+        token in _normalized(clip.get("descripcion", ""))
+        for token in ("archivo", "1950", "1955", "1956", "anos 50")
+    )
+    if original_type == "video_stock" and (round_number >= 2 or historical):
         # Es preferible una fotografia exacta animada con Ken Burns que un
         # video semanticamente falso.
         clip["tipo_recurso"] = "imagen_stock"
@@ -101,6 +282,8 @@ def _repair_clip(element: dict[str, Any], round_number: int) -> dict[str, Any]:
         offset = (round_number - 1) % len(alternatives)
         alternatives = alternatives[offset:] + alternatives[:offset]
     clip["consultas_alternativas"] = alternatives
+    clip["busqueda_en"] = alternatives[0] if alternatives else ""
+    clip["busqueda_es"] = ""
     clip["_repair_original_type"] = original_type
     return clip
 
