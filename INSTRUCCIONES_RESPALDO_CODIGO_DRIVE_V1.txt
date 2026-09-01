@@ -1,0 +1,58 @@
+AUTOTUBE AI - RESPALDO VERSIONADO DEL CODIGO EN GOOGLE DRIVE V1
+================================================================
+
+OBJETIVO
+-------
+Crear un ZIP recuperable del commit actual de Git y guardarlo en Google Drive,
+sin incluir .env, tokens, credenciales, videos, caches, entornos virtuales ni
+otros archivos no controlados por Git.
+
+ARCHIVOS DE ESTA ACTUALIZACION
+------------------------------
+- pyproject.toml
+- src/autotube/main.py
+- src/autotube/operations/code_backup.py
+- tools/google_drive_code_backup.py
+- tests/test_code_backup.py
+- INSTRUCCIONES_RESPALDO_CODIGO_DRIVE_V1.txt
+
+FLUJO SEGURO DE INSTALACION
+---------------------------
+1. Detener procesos de AutoTube antes de reemplazar archivos.
+2. Crear un ZIP previo del proyecto.
+3. Copiar los archivos de esta actualizacion respetando sus carpetas.
+4. Ejecutar las pruebas indicadas por el asistente.
+5. Crear el commit y la etiqueta Git.
+6. Ejecutar primero la simulacion:
+
+   autotube code-backup --dry-run
+
+7. Si la simulacion es correcta, subir el respaldo real:
+
+   autotube code-backup
+
+ESTRUCTURA CREADA EN GOOGLE DRIVE
+--------------------------------
+NEXON IA - AutoTube AI/
+  Actualizaciones del sistema/
+    <version> - <commit>/
+      autotube-ai_<version>_<commit>.zip
+      autotube-ai_<version>_<commit>.manifest.json
+
+CONTROLES DE SEGURIDAD
+----------------------
+- El ZIP se genera directamente desde el commit exacto de Git.
+- Los archivos no controlados por Git nunca entran al ZIP.
+- Se rechaza el respaldo si existen cambios controlados sin commit.
+- Se bloquea si el commit contiene .env, token.json, client_secret.json,
+  credentials.json, claves .pem/.key/.p12/.pfx u otros nombres sensibles.
+- El manifiesto registra commit, version, lista de archivos y SHA-256.
+- La operacion no elimina ni mueve archivos locales.
+
+RECUPERACION
+------------
+1. Descargar el ZIP y su manifiesto desde Google Drive.
+2. Comparar el SHA-256 del ZIP con archive_sha256 del manifiesto.
+3. Extraer el ZIP en una carpeta nueva.
+4. Crear un entorno virtual e instalar el proyecto.
+5. Restaurar credenciales por separado; nunca vienen dentro del respaldo.

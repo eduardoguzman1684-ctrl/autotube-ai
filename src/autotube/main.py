@@ -400,6 +400,26 @@ def crear_parser() -> argparse.ArgumentParser:
     visual_cache_parser.add_argument("--dry-run", action="store_true")
     visual_cache_parser.add_argument("--confirmar", action="store_true")
 
+    code_backup_parser = subcomandos.add_parser(
+        "code-backup",
+        help="Respalda en Google Drive el commit actual sin credenciales.",
+    )
+    code_backup_parser.add_argument(
+        "--version",
+        default=None,
+        help="Version del respaldo; usa la etiqueta Git si se omite.",
+    )
+    code_backup_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Valida el respaldo sin crear archivos ni usar Google Drive.",
+    )
+    code_backup_parser.add_argument(
+        "--carpeta-raiz",
+        default="NEXON IA - AutoTube AI",
+        help="Carpeta raiz de AutoTube AI en Google Drive.",
+    )
+
     subtitles_parser = subcomandos.add_parser(
         "subtitles",
         help="Genera subtítulos SRT sincronizados con la voz.",
@@ -1708,6 +1728,38 @@ def gestionar_cache_visual(argumentos: argparse.Namespace) -> None:
         and getattr(argumentos, "confirmar", False)
     ):
         comando.append("--confirmar")
+
+    subprocess.run(
+        comando,
+        cwd=project_root,
+        check=True,
+    )
+
+
+def respaldar_codigo_drive(argumentos: argparse.Namespace) -> None:
+    """Respalda en Drive un ZIP seguro del commit actual de Git."""
+    import subprocess
+    import sys
+
+    project_root = Path(__file__).resolve().parents[2]
+    herramienta = project_root / "tools" / "google_drive_code_backup.py"
+
+    if not herramienta.is_file():
+        raise FileNotFoundError(
+            "No existe la herramienta de respaldo del codigo: "
+            f"{herramienta}"
+        )
+
+    comando = [
+        sys.executable,
+        str(herramienta),
+        "--carpeta-raiz",
+        str(argumentos.carpeta_raiz),
+    ]
+    if argumentos.version:
+        comando.extend(["--version", str(argumentos.version)])
+    if argumentos.dry_run:
+        comando.append("--dry-run")
 
     subprocess.run(
         comando,
@@ -3680,6 +3732,10 @@ def main() -> None:
 
         if argumentos.comando == "visual-cache":
             gestionar_cache_visual(argumentos)
+            return
+
+        if argumentos.comando == "code-backup":
+            respaldar_codigo_drive(argumentos)
             return
 
         if argumentos.comando == "tutorial-capture":
