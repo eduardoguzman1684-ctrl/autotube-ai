@@ -540,7 +540,9 @@ def sincronizar_duraciones_con_timeline(
             )
         )
         copy["timeline_event_id"] = str(event.get("id", ""))
-        copy["sincronizacion_render"] = "semantic_timeline_v2"
+        copy["sincronizacion_render"] = str(
+            timeline.get("version", "semantic_timeline_v2")
+        )
         synchronized.append(copy)
 
     if len(synchronized) != len(events):
@@ -1248,7 +1250,7 @@ class CompositorVideo:
                 else ""
             ),
             "sincronizacion_render": (
-                "semantic_timeline_v2"
+                str(timeline.get("version", "semantic_timeline_v2"))
                 if timeline is not None
                 else "legacy_audio_scaling"
             ),

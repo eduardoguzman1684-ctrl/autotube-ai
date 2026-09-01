@@ -213,17 +213,73 @@ class SpeechAlignmentV2Test(unittest.TestCase):
                 channel_slug="nexon_ia",
             )
 
-            self.assertEqual(timeline["version"], "semantic_timeline_v2")
+            self.assertEqual(timeline["version"], "semantic_timeline_v2.1")
             self.assertEqual(timeline["events"][0]["end_ms"], 5800)
             self.assertEqual(timeline["events"][1]["start_ms"], 5800)
             self.assertEqual(
                 timeline["events"][0]["alignment"]["source"],
                 "edge_word_boundary",
             )
+            self.assertEqual(
+                timeline["events"][0]["alignment"]["method"],
+                "semantic_phrase_exact",
+            )
             self.assertEqual(len(timeline["tracks"]["words"]), 12)
+
+    def test_snaps_existing_visual_count_to_real_word_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            files = [root / f"visual_{index}.jpg" for index in range(1, 4)]
+            for path in files:
+                path.write_bytes(b"visual")
+
+            assets = {
+                "titulo": "Alineacion real",
+                "channel_slug": "nexon_ia",
+                "elementos": [
+                    self._asset(1, files[0], 0.0, 3.1),
+                    self._asset(2, files[1], 3.1, 7.2),
+                    self._asset(3, files[2], 7.2, 12.0),
+                ],
+            }
+            timeline = GeneradorTimelineSemantica(root / "output").construir(
+                assets_manifest=assets,
+                audio_manifest=_real_audio_manifest(),
+                assets_path=root / "assets.json",
+                audio_path=root / "audio.json",
+                channel_slug="nexon_ia",
+            )
+
+            events = timeline["events"]
+            self.assertEqual(len(events), 3)
+            self.assertEqual(events[0]["start_ms"], 0)
+            self.assertEqual(events[-1]["end_ms"], 12000)
+            self.assertEqual(events[0]["end_ms"], 2800)
+            self.assertEqual(events[1]["end_ms"], 6800)
+            self.assertTrue(
+                all(
+                    event["alignment"]["source"] == "edge_word_boundary"
+                    for event in events
+                )
+            )
+            self.assertTrue(
+                all(
+                    event["alignment"]["method"]
+                    == "existing_visual_count_snapped_to_word_boundary"
+                    for event in events
+                )
+            )
+            self.assertEqual(
+                timeline["validation"]["real_word_aligned_events"],
+                3,
+            )
+            self.assertEqual(timeline["validation"]["legacy_events"], 0)
+            for previous, current in zip(events, events[1:]):
+                self.assertEqual(previous["end_ms"], current["start_ms"])
 
     def test_render_uses_timeline_durations_without_rescaling(self) -> None:
         timeline = {
+            "version": "semantic_timeline_v2.1",
             "duration_ms": 12000,
             "events": [
                 {
@@ -268,7 +324,7 @@ class SpeechAlignmentV2Test(unittest.TestCase):
         )
         self.assertEqual(
             synchronized[0]["sincronizacion_render"],
-            "semantic_timeline_v2",
+            "semantic_timeline_v2.1",
         )
 
     @staticmethod

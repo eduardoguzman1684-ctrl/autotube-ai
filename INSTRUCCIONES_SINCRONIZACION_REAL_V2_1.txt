@@ -1,0 +1,50 @@
+AUTOTUBE AI - SINCRONIZACION REAL V2.1
+======================================
+
+OBJETIVO
+--------
+Eliminar los eventos "legacy_asset_timing" de colecciones visuales creadas
+antes de la timeline v2, sin descargar ni reemplazar sus recursos.
+
+CAMBIOS
+-------
+- Conserva exactamente los visuales existentes y su orden.
+- Si visuales y frases coinciden, usa la frase semantica exacta.
+- Si las cantidades difieren, mueve cada corte visual al final real de la
+  palabra mas cercana de Edge TTS WordBoundary.
+- Reserva como minimo una palabra para cada visual restante.
+- Registra el metodo de alineacion de cada evento.
+- La validacion informa eventos reales y eventos legacy.
+- El compositor registra dinamicamente la version de timeline usada.
+
+ARCHIVOS DE LA ACTUALIZACION
+----------------------------
+pyproject.toml
+src\autotube\timeline\semantic_timeline.py
+src\autotube\video\composer.py
+tests\test_speech_alignment_v2.py
+
+VERSION
+-------
+Paquete: AutoTube AI 0.3.1
+Timeline: semantic_timeline_v2.1
+Tag recomendado: sincronizacion-real-v2.1
+
+VALIDACION ESPERADA
+-------------------
+Para la produccion "El Nacimiento de la IA", la agrupacion por
+alignment.source debe mostrar:
+
+edge_word_boundary    65
+
+La agrupacion por alignment.method debe mostrar una combinacion de:
+
+existing_visual_count_snapped_to_word_boundary
+semantic_phrase_exact
+
+El total de ambos metodos debe ser 65 y legacy_asset_timing debe ser 0.
+
+IMPORTANTE
+----------
+No renderizar si aparece algun evento legacy_asset_timing. Primero comprobar
+la nueva timeline y ejecutar un preview corto.

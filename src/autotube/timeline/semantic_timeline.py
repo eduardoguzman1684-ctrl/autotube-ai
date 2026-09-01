@@ -12,7 +12,7 @@ from autotube.timeline.speech_alignment import (
 )
 
 
-TIMELINE_VERSION = "semantic_timeline_v2"
+TIMELINE_VERSION = "semantic_timeline_v2.1"
 READY_ASSET_STATES = {"descargado", "generado_local"}
 
 
@@ -85,6 +85,124 @@ def _visual_verification(asset: dict[str, Any]) -> dict[str, Any]:
             return nested
 
     return {}
+
+
+def _alignment_assignments(
+    assets: list[dict[str, Any]],
+    aligned_segment: dict[str, Any] | None,
+) -> dict[int, dict[str, Any]]:
+    """Asigna un intervalo de voz real a cada visual de un segmento.
+
+    Si la cantidad de frases semanticas coincide con la de visuales, conserva
+    el mapeo frase a frase. Para colecciones creadas por versiones anteriores,
+    mantiene sus visuales y ajusta cada corte al final real de la palabra mas
+    cercana. Nunca inventa cortes proporcionales cuando existen WordBoundary.
+    """
+    if not assets or not isinstance(aligned_segment, dict):
+        return {}
+
+    phrases = aligned_segment.get("phrases", [])
+    if (
+        isinstance(phrases, list)
+        and len(phrases) == len(assets)
+        and all(isinstance(phrase, dict) for phrase in phrases)
+    ):
+        return {
+            _int(asset.get("clip_orden", 0), "clip_orden"): {
+                "start_ms": int(phrase["start_ms"]),
+                "end_ms": int(phrase["end_ms"]),
+                "text": str(phrase.get("text", "")).strip(),
+                "source": str(
+                    phrase.get("timing_source", "speech_alignment_v2")
+                ),
+                "phrase_id": str(phrase.get("id", "")),
+                "word_start": phrase.get("global_word_start"),
+                "word_end": phrase.get("global_word_end"),
+                "method": "semantic_phrase_exact",
+            }
+            for asset, phrase in zip(assets, phrases)
+        }
+
+    words = aligned_segment.get("words", [])
+    if (
+        not isinstance(words, list)
+        or len(words) < len(assets)
+        or not all(isinstance(word, dict) for word in words)
+    ):
+        return {}
+
+    ordered_words = sorted(
+        words,
+        key=lambda word: (
+            int(word.get("start_ms", 0)),
+            int(word.get("end_ms", 0)),
+        ),
+    )
+    if any(
+        int(word.get("end_ms", 0)) <= int(word.get("start_ms", 0))
+        for word in ordered_words
+    ):
+        return {}
+
+    segment_index = int(aligned_segment.get("segment_index", 0))
+    segment_start_ms = int(aligned_segment.get("start_ms", 0))
+    segment_end_ms = int(aligned_segment.get("end_ms", 0))
+    timing_source = str(
+        aligned_segment.get("timing_source", "speech_alignment_v2")
+    )
+    assignments: dict[int, dict[str, Any]] = {}
+    previous_cut_index = -1
+    previous_end_ms = segment_start_ms
+
+    for asset_position, asset in enumerate(assets):
+        clip_order = _int(asset.get("clip_orden", 0), "clip_orden")
+        is_last = asset_position == len(assets) - 1
+
+        if is_last:
+            cut_index = len(ordered_words) - 1
+            end_ms = segment_end_ms
+        else:
+            remaining_assets = len(assets) - asset_position - 1
+            first_candidate = previous_cut_index + 1
+            last_candidate = len(ordered_words) - remaining_assets - 1
+            if last_candidate < first_candidate:
+                return {}
+
+            target_ms = _ms(
+                _float(
+                    asset.get("final_segundos", previous_end_ms / 1000),
+                    "final_segundos",
+                )
+            )
+            cut_index = min(
+                range(first_candidate, last_candidate + 1),
+                key=lambda index: (
+                    abs(int(ordered_words[index]["end_ms"]) - target_ms),
+                    index,
+                ),
+            )
+            end_ms = int(ordered_words[cut_index]["end_ms"])
+
+        interval_words = ordered_words[previous_cut_index + 1 : cut_index + 1]
+        if not interval_words or end_ms <= previous_end_ms:
+            return {}
+
+        assignments[clip_order] = {
+            "start_ms": previous_end_ms,
+            "end_ms": end_ms,
+            # El texto original mantiene la correspondencia semantica usada
+            # para seleccionar este recurso visual historico.
+            "text": str(asset.get("texto_narrado", "")).strip(),
+            "source": timing_source,
+            "phrase_id": f"s{segment_index:02d}_snap{asset_position + 1:03d}",
+            "word_start": interval_words[0].get("global_word_index"),
+            "word_end": interval_words[-1].get("global_word_index"),
+            "method": "existing_visual_count_snapped_to_word_boundary",
+        }
+        previous_cut_index = cut_index
+        previous_end_ms = end_ms
+
+    return assignments
 
 
 class GeneradorTimelineSemantica:
@@ -257,16 +375,21 @@ class GeneradorTimelineSemantica:
             ),
         )
 
-        asset_count_by_segment: dict[int, int] = {}
+        assets_by_segment: dict[int, list[dict[str, Any]]] = {}
         for asset in ordered_assets:
             segment_index = _int(
                 asset.get("segmento_indice", 0),
                 "segmento_indice",
             )
-            asset_count_by_segment[segment_index] = (
-                asset_count_by_segment.get(segment_index, 0)
-                + 1
-            )
+            assets_by_segment.setdefault(segment_index, []).append(asset)
+
+        assignments: dict[tuple[int, int], dict[str, Any]] = {}
+        for segment_index, segment_assets in assets_by_segment.items():
+            for clip_order, assignment in _alignment_assignments(
+                segment_assets,
+                aligned_segments.get(segment_index),
+            ).items():
+                assignments[(segment_index, clip_order)] = assignment
 
         events: list[dict[str, Any]] = []
 
@@ -303,37 +426,10 @@ class GeneradorTimelineSemantica:
                 _float(asset.get("final_segundos", 0), "final_segundos")
             )
 
-            aligned_phrase: dict[str, Any] | None = None
-            aligned_segment = aligned_segments.get(
-                segment_index
-            )
-            if isinstance(aligned_segment, dict):
-                phrases = aligned_segment.get(
-                    "phrases",
-                    [],
-                )
-                if (
-                    isinstance(phrases, list)
-                    and len(phrases)
-                    == asset_count_by_segment.get(
-                        segment_index,
-                        0,
-                    )
-                    and 1 <= clip_order <= len(phrases)
-                    and isinstance(
-                        phrases[clip_order - 1],
-                        dict,
-                    )
-                ):
-                    aligned_phrase = phrases[
-                        clip_order - 1
-                    ]
-                    start_ms = int(
-                        aligned_phrase["start_ms"]
-                    )
-                    end_ms = int(
-                        aligned_phrase["end_ms"]
-                    )
+            aligned_phrase = assignments.get((segment_index, clip_order))
+            if aligned_phrase is not None:
+                start_ms = int(aligned_phrase["start_ms"])
+                end_ms = int(aligned_phrase["end_ms"])
 
             if end_ms <= start_ms:
                 raise TimelineValidationError(
@@ -379,7 +475,7 @@ class GeneradorTimelineSemantica:
                         "source": (
                             str(
                                 aligned_phrase.get(
-                                    "timing_source",
+                                    "source",
                                     "speech_alignment_v2",
                                 )
                             )
@@ -409,6 +505,11 @@ class GeneradorTimelineSemantica:
                             )
                             if aligned_phrase is not None
                             else None
+                        ),
+                        "method": (
+                            str(aligned_phrase.get("method", ""))
+                            if aligned_phrase is not None
+                            else "legacy_asset_timing"
                         ),
                     },
                     "visual": {
@@ -443,6 +544,15 @@ class GeneradorTimelineSemantica:
         events.sort(key=lambda event: (event["start_ms"], event["end_ms"]))
         self.validar_eventos(events=events, total_ms=total_ms)
 
+        alignment_sources: dict[str, int] = {}
+        alignment_methods: dict[str, int] = {}
+        for event in events:
+            event_alignment = event["alignment"]
+            source = str(event_alignment.get("source", "unknown"))
+            method = str(event_alignment.get("method", "unknown"))
+            alignment_sources[source] = alignment_sources.get(source, 0) + 1
+            alignment_methods[method] = alignment_methods.get(method, 0) + 1
+
         return {
             "version": TIMELINE_VERSION,
             "generated_at": datetime.now()
@@ -466,6 +576,17 @@ class GeneradorTimelineSemantica:
                 "aligned_words": alignment[
                     "word_count"
                 ],
+                "event_alignment_sources": alignment_sources,
+                "event_alignment_methods": alignment_methods,
+                "real_word_aligned_events": sum(
+                    count
+                    for source, count in alignment_sources.items()
+                    if source == "edge_word_boundary"
+                ),
+                "legacy_events": alignment_sources.get(
+                    "legacy_asset_timing",
+                    0,
+                ),
             },
             "tracks": {
                 "words": alignment["words"],
