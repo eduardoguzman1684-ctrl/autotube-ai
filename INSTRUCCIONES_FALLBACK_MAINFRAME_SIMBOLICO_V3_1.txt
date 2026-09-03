@@ -1,0 +1,52 @@
+AUTOTUBE AI - FALLBACK MAINFRAME Y LOGICA SIMBOLICA V3.1
+========================================================
+
+OBJETIVO
+--------
+Resolver cuatro falsos positivos historicos detectados por la reauditoria sin
+reutilizar paneles modernos ni imagenes genericas como evidencia de los anos 50.
+
+CONTRATOS CUBIERTOS
+-------------------
+- Lectora de tarjetas perforadas en funcionamiento.
+- Investigador operando interruptores de una computadora central.
+- Diagrama historico de reglas logicas simbolicas.
+- Luces de una consola central durante el procesamiento.
+
+COMPORTAMIENTO
+--------------
+- Conserva dos rondas para buscar archivo autentico.
+- Desde la tercera ronda genera una tarjeta factual especifica por contrato.
+- Cada tarjeta tiene texto, estilo y geometria propios.
+- Preserva la descripcion editorial original como autoridad.
+- No exige barras ni separadores artificiales en el texto visible.
+- Mantiene bloqueado el render hasta la aprobacion completa de 65 recursos.
+
+ARCHIVOS
+--------
+pyproject.toml
+src/autotube/visuals/visual_repair.py
+src/autotube/visuals/local_asset_generator.py
+tests/test_mainframe_symbolic_fallback_v3_1.py
+
+VALIDACION
+----------
+python -m py_compile `
+  .\src\autotube\visuals\visual_repair.py `
+  .\src\autotube\visuals\local_asset_generator.py `
+  .\tests\test_mainframe_symbolic_fallback_v3_1.py
+
+python -m unittest discover -s tests -v
+
+REPARACION
+----------
+autotube visual-repair `
+  --canal nexon_ia `
+  --assets "$coleccionValidada" `
+  --visual-audit "$auditPath" `
+  --limite 24 `
+  --ronda-inicial 3 `
+  --intentos 1
+
+No renderizar ni publicar hasta que una auditoria completa de los 65 recursos
+termine con Estado: APPROVED.

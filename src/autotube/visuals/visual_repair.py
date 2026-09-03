@@ -16,7 +16,7 @@ from autotube.visuals.final_visual_auditor import (
 )
 
 
-REPAIR_VERSION = "visual_repair_v3.4"
+REPAIR_VERSION = "visual_repair_v3.5"
 
 
 class VisualRepairError(RuntimeError):
@@ -261,7 +261,38 @@ def _apply_editorial_fallback(
     description = ""
     card_style = ""
 
-    if "norbert wiener" in context:
+    if "lectora de tarjetas perforadas" in context:
+        screen = "Tarjetas perforadas\nLectura de datos · años 50"
+        description = (
+            "Tarjeta documental animada que explica la lectura de datos "
+            "mediante tarjetas perforadas en las computadoras de los años cincuenta."
+        )
+        card_style = "lectora_tarjetas_perforadas"
+    elif (
+        "investigador operando los interruptores" in context
+        and "computadora central" in context
+    ):
+        screen = "Computadora central · años 50\nOperación mediante interruptores"
+        description = (
+            "Tarjeta documental animada sobre la operación manual de una "
+            "computadora central histórica mediante interruptores."
+        )
+        card_style = "operador_mainframe_interruptores"
+    elif "reglas logicas simbolicas" in context:
+        screen = "Reglas simbólicas\nFormalizar la cognición"
+        description = (
+            "Tarjeta documental animada que representa reglas lógicas "
+            "simbólicas como modelo formal de la cognición."
+        )
+        card_style = "diagrama_reglas_simbolicas"
+    elif "luces parpadeantes" in context and "consola central" in context:
+        screen = "Consola central\nProcesamiento en marcha"
+        description = (
+            "Tarjeta documental animada que representa la actividad de una "
+            "consola central histórica durante el procesamiento."
+        )
+        card_style = "consola_mainframe_luces"
+    elif "norbert wiener" in context:
         screen = "Norbert Wiener\nCibernética: control y comunicación"
         description = (
             "Tarjeta documental animada que identifica a Norbert Wiener y "

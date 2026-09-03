@@ -1269,6 +1269,10 @@ def generar_tarjeta_editorial(
         "libro_filosofia_tecnologia": 3,
         "mesa_dartmouth_exterior": 5,
         "ajedrez_computadora_historica": 2,
+        "lectora_tarjetas_perforadas": 3,
+        "operador_mainframe_interruptores": 0,
+        "diagrama_reglas_simbolicas": 2,
+        "consola_mainframe_luces": 4,
     }
     variante = variantes.get(
         estilo,
