@@ -1,0 +1,60 @@
+AUTOTUBE AI - EVIDENCIA HISTORICA Y TARJETAS DISTINTAS V2.7
+======================================================================
+
+OBJETIVO
+-------
+Completar los eventos historicos que no consiguen una fotografia autentica
+sin inventar material de archivo y sin producir tarjetas visualmente duplicadas.
+
+CAMBIOS PRINCIPALES
+-------------------
+1. La ronda 1 y la ronda 2 siguen buscando recursos historicos autenticos.
+2. Desde la ronda 3 se permite una tarjeta documental factual para:
+   - Marvin Minsky.
+   - Allen Newell y Herbert Simon.
+   - Claude Shannon.
+   - Sistemas electromecanicos con reles y cables.
+   - La mesa de trabajo de Dartmouth de 1956.
+   - La propuesta mecanografiada de Dartmouth de 1955.
+3. Cada contrato utiliza una composicion visual propia. El texto ya no es el
+   unico cambio entre tarjetas consecutivas.
+4. La auditoria estricta de pixeles y semantica permanece activa. Esta
+   actualizacion no fuerza aprobaciones ni permite renderizar rechazos.
+
+ARCHIVOS DE LA ACTUALIZACION
+----------------------------
+- pyproject.toml
+- src/autotube/visuals/visual_repair.py
+- src/autotube/visuals/local_asset_generator.py
+- tests/test_historical_evidence_v2_7.py
+- INSTRUCCIONES_EVIDENCIA_HISTORICA_V2_7.txt
+
+PRUEBA RECOMENDADA DESPUES DE INSTALAR
+--------------------------------------
+python -m py_compile `
+  .\src\autotube\visuals\visual_repair.py `
+  .\src\autotube\visuals\local_asset_generator.py `
+  .\tests\test_historical_evidence_v2_7.py
+
+python -m unittest -v `
+  tests.test_historical_evidence_v2_7 `
+  tests.test_editorial_fallback_v2_5 `
+  tests.test_visual_contract_v2_4 `
+  tests.test_visual_repair_v2_3 `
+  tests.test_final_visual_audit_v2_2
+
+REANUDACION DE LA REPARACION
+----------------------------
+Usa la auditoria mas reciente compatible con el manifiesto actual y ejecuta
+una sola ronda editorial:
+
+autotube visual-repair `
+  --canal nexon_ia `
+  --assets "$coleccionValidada" `
+  --visual-audit "$auditPath" `
+  --limite 16 `
+  --ronda-inicial 3 `
+  --intentos 1
+
+No ejecutes render mientras el estado final sea REJECTED.
+======================================================================

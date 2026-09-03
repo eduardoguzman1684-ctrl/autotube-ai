@@ -1108,6 +1108,15 @@ def generar_texto_animado(
     elemento: dict[str, Any],
 ) -> Image.Image:
     """Genera una tarjeta diseñada para animación posterior."""
+    estilo_editorial = str(
+        elemento.get("estilo_tarjeta", "")
+    ).strip()
+    if estilo_editorial:
+        return generar_tarjeta_editorial(
+            elemento,
+            estilo_editorial,
+        )
+
     imagen = crear_fondo()
     dibujo = ImageDraw.Draw(imagen)
 
@@ -1231,6 +1240,152 @@ def generar_texto_animado(
         anchor="mm",
     )
 
+    return imagen
+
+
+def generar_tarjeta_editorial(
+    elemento: dict[str, Any],
+    estilo: str,
+) -> Image.Image:
+    """Genera tarjetas factuales con geometrías perceptualmente distintas."""
+    imagen = crear_fondo()
+    dibujo = ImageDraw.Draw(imagen)
+    titulo = str(elemento.get("segmento_titulo", "Nexo IA"))
+    principal = contenido_principal(elemento)
+    acento = color_acento(estilo + principal)
+    variantes = {
+        "perfil_mccarthy": 0,
+        "perfil_minsky": 1,
+        "dupla_newell_simon": 2,
+        "perfil_shannon": 3,
+        "circuito_electromecanico": 4,
+        "mesa_dartmouth": 5,
+        "fundadores_dartmouth": 1,
+        "flujo_inteligencia": 4,
+        "documento_dartmouth": 6,
+    }
+    variante = variantes.get(
+        estilo,
+        hashlib.sha256(estilo.encode("utf-8")).digest()[0] % 7,
+    )
+
+    dibujar_encabezado(
+        dibujo,
+        titulo,
+        "Evidencia histórica · tarjeta editorial",
+        acento,
+    )
+
+    # Cada variante altera grandes masas claras y oscuras. Esto evita que dos
+    # tarjetas consecutivas sean equivalentes para el hash perceptual, incluso
+    # cuando comparten tipografía, cabecera o una fecha histórica.
+    if variante == 0:
+        dibujo.rectangle((0, 245, 330, ALTO), fill=acento)
+        caja_texto = (430, 285, 1760, 865)
+        centro_x = 1095
+    elif variante == 1:
+        dibujo.rounded_rectangle(
+            (110, 245, 1810, 465), radius=42, fill=acento
+        )
+        dibujo.ellipse((1430, 560, 1900, 1030), fill=PANEL_CLARO)
+        caja_texto = (165, 515, 1510, 930)
+        centro_x = 835
+    elif variante == 2:
+        dibujo.polygon(
+            ((0, 300), (760, 220), (1020, ALTO), (0, ALTO)),
+            fill=(acento[0] // 2, acento[1] // 2, acento[2] // 2),
+        )
+        dibujo.ellipse((160, 390, 470, 700), outline=BLANCO, width=12)
+        dibujo.ellipse((500, 565, 810, 875), outline=acento, width=12)
+        caja_texto = (870, 300, 1810, 900)
+        centro_x = 1340
+    elif variante == 3:
+        dibujo.rectangle((890, 235, 1030, ALTO), fill=acento)
+        dibujo.rounded_rectangle(
+            (105, 330, 790, 900), radius=50, fill=PANEL_CLARO
+        )
+        caja_texto = (1110, 315, 1810, 900)
+        centro_x = 1460
+    elif variante == 4:
+        for x, y in ((190, 360), (460, 720), (760, 430), (1070, 760)):
+            dibujo.line((x, y, x + 270, y + 130), fill=acento, width=18)
+            dibujo.ellipse((x - 28, y - 28, x + 28, y + 28), fill=BLANCO)
+        caja_texto = (1010, 260, 1830, 700)
+        centro_x = 1420
+    elif variante == 5:
+        dibujo.ellipse((120, 285, 980, 1035), outline=acento, width=55)
+        dibujo.ellipse((330, 470, 600, 740), fill=PANEL_CLARO)
+        dibujo.ellipse((620, 610, 890, 880), fill=acento)
+        caja_texto = (910, 300, 1810, 900)
+        centro_x = 1360
+    else:
+        dibujo.polygon(
+            ((285, 245), (1210, 245), (1480, 515), (1480, 955), (285, 955)),
+            fill=(232, 225, 207),
+        )
+        dibujo.polygon(
+            ((1210, 245), (1210, 515), (1480, 515)),
+            fill=(174, 166, 148),
+        )
+        for y in (610, 690, 770, 850):
+            dibujo.line((455, y, 1120, y), fill=(86, 91, 96), width=8)
+        caja_texto = (1030, 325, 1835, 885)
+        centro_x = 1430
+
+    if variante != 6:
+        dibujo.rounded_rectangle(
+            caja_texto,
+            radius=45,
+            fill=PANEL,
+            outline=acento,
+            width=5,
+        )
+    else:
+        dibujo.rounded_rectangle(
+            caja_texto,
+            radius=45,
+            fill=PANEL,
+            outline=acento,
+            width=6,
+        )
+
+    ancho_texto = max(560, caja_texto[2] - caja_texto[0] - 120)
+    fuente_texto = obtener_fuente(68, negrita=True)
+    lineas = texto_ajustado(
+        dibujo,
+        principal,
+        fuente_texto,
+        ancho_texto,
+        max_lineas=5,
+    )
+    altura_total = len(lineas) * 88
+    inicio_y = max(
+        caja_texto[1] + 55,
+        (caja_texto[1] + caja_texto[3] - altura_total) // 2,
+    )
+    dibujar_lineas_centradas(
+        dibujo,
+        lineas,
+        centro_x,
+        inicio_y,
+        fuente_texto,
+        BLANCO,
+        separacion=20,
+    )
+
+    fuente_marca = obtener_fuente(24, negrita=True)
+    dibujo.rounded_rectangle(
+        (ANCHO - 360, ALTO - 120, ANCHO - 90, ALTO - 68),
+        radius=18,
+        fill=acento,
+    )
+    dibujo.text(
+        (ANCHO - 225, ALTO - 94),
+        "NEXO IA · DOCUMENTAL",
+        font=fuente_marca,
+        fill=FONDO_1,
+        anchor="mm",
+    )
     return imagen
 
 
@@ -1484,6 +1639,9 @@ class GeneradorRecursosLocales:
                     "ancho": ANCHO,
                     "alto": ALTO,
                     "formato": "png",
+                    "estilo_tarjeta": str(
+                        elemento.get("estilo_tarjeta", "")
+                    ),
                     "interfaz_ilustrativa": (
                         tipo == "captura_interfaz"
                     ),

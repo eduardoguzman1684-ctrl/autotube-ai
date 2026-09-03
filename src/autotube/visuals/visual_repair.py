@@ -16,7 +16,7 @@ from autotube.visuals.final_visual_auditor import (
 )
 
 
-REPAIR_VERSION = "visual_repair_v3.1"
+REPAIR_VERSION = "visual_repair_v3.2"
 
 
 class VisualRepairError(RuntimeError):
@@ -255,6 +255,7 @@ def _apply_editorial_fallback(
     )
     screen = ""
     description = ""
+    card_style = ""
 
     if "john mccarthy" in context:
         screen = "John McCarthy\nPadre de la Inteligencia Artificial"
@@ -262,6 +263,49 @@ def _apply_editorial_fallback(
             "Tarjeta documental animada que identifica claramente a John "
             "McCarthy y su papel fundador en la inteligencia artificial."
         )
+        card_style = "perfil_mccarthy"
+    elif "marvin minsky" in context:
+        screen = "Marvin Minsky\nPionero de la IA · MIT"
+        description = (
+            "Tarjeta documental animada que identifica a Marvin Minsky como "
+            "pionero de la inteligencia artificial vinculado al MIT."
+        )
+        card_style = "perfil_minsky"
+    elif "allen newell" in context or "herbert simon" in context:
+        screen = "Newell + Simon\nRazonamiento simbólico"
+        description = (
+            "Tarjeta documental animada que identifica a Allen Newell y "
+            "Herbert Simon y su trabajo en razonamiento simbólico."
+        )
+        card_style = "dupla_newell_simon"
+    elif "claude shannon" in context:
+        screen = "Claude Shannon\nInformación, lógica y máquinas"
+        description = (
+            "Tarjeta documental animada que identifica a Claude Shannon y "
+            "su vínculo con la teoría de la información y la lógica."
+        )
+        card_style = "perfil_shannon"
+    elif (
+        "electromecan" in context
+        or ("rele" in context and "cable" in context)
+        or "sistema automatizado" in context
+    ):
+        screen = "Relés + cables\nAutomatización electromecánica"
+        description = (
+            "Tarjeta documental animada que explica la automatización "
+            "electromecánica mediante relés y cableado de época."
+        )
+        card_style = "circuito_electromecanico"
+    elif (
+        "academico" in context
+        and ("mesa" in context or "conferencia" in context)
+    ):
+        screen = "Dartmouth 1956\nIdeas alrededor de una mesa"
+        description = (
+            "Tarjeta documental animada que representa el carácter académico "
+            "y colaborativo del taller de Dartmouth de 1956."
+        )
+        card_style = "mesa_dartmouth"
     elif "dartmouth" in context and (
         "investigador" in context or "fundador" in context or "1956" in context
     ) and not any(
@@ -272,12 +316,14 @@ def _apply_editorial_fallback(
             "Tarjeta documental animada de Dartmouth 1956 con los nombres de "
             "los cuatro investigadores vinculados a la propuesta fundacional."
         )
+        card_style = "fundadores_dartmouth"
     elif "diagrama" in context and "flujo" in context:
         screen = "1956\nDescribir la inteligencia para poder simularla"
         description = (
             "Tarjeta documental animada que representa la idea central de "
             "describir formalmente la inteligencia para simularla en una maquina."
         )
+        card_style = "flujo_inteligencia"
     elif "dartmouth" in context and any(
         token in context for token in ("propuesta", "manifiesto", "documento")
     ):
@@ -286,6 +332,7 @@ def _apply_editorial_fallback(
             "Tarjeta documental animada que identifica la propuesta de Dartmouth "
             "de 1955 como documento fundacional de la inteligencia artificial."
         )
+        card_style = "documento_dartmouth"
 
     if not screen:
         return clip
@@ -293,6 +340,7 @@ def _apply_editorial_fallback(
     original_description = str(clip.get("descripcion", ""))
     clip["descripcion_editorial_original"] = original_description
     clip["tipo_recurso"] = "texto_animado"
+    clip["estilo_tarjeta"] = card_style or _event_id(clip)
     clip["texto_pantalla"] = screen
     clip["descripcion"] = description
     clip["concepto_central"] = description
@@ -712,6 +760,7 @@ class ReparadorVisual:
                     "elementos_prohibidos",
                     "consultas_alternativas",
                     "texto_pantalla",
+                    "estilo_tarjeta",
                     "fallback_editorial",
                 ):
                     if key in candidate:
