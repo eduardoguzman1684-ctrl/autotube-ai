@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 import subprocess
@@ -44,7 +44,7 @@ class SelectorCodificadorTest(unittest.TestCase):
         )
         prueba.assert_not_called()
 
-    def test_auto_usa_qsv_en_render_final(self) -> None:
+    def test_auto_prefiere_cpu_en_render_final(self) -> None:
         with patch.dict(
             os.environ,
             {
@@ -56,27 +56,20 @@ class SelectorCodificadorTest(unittest.TestCase):
             with patch.object(
                 hardware_encoder,
                 "probar_qsv",
-                return_value=(
-                    True,
-                    "disponible",
-                ),
-            ):
+            ) as prueba:
                 configuracion = seleccionar_codificador(
                     crf_cpu=18,
                     preset_cpu="fast",
                 )
 
-        self.assertTrue(
+        self.assertFalse(
             configuracion.hardware
         )
         self.assertEqual(
             configuracion.nombre,
-            "h264_qsv",
+            "libx264",
         )
-        self.assertEqual(
-            configuracion.calidad,
-            20,
-        )
+        prueba.assert_not_called()
 
     def test_qsv_forzado_supera_preferencia_cpu(self) -> None:
         with patch.dict(
@@ -258,7 +251,7 @@ class RecuperacionFinalizadorTest(unittest.TestCase):
             )
             self.assertEqual(
                 llamadas,
-                2,
+                3,
             )
             marcar.assert_called_once()
 

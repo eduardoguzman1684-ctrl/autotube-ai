@@ -1,0 +1,53 @@
+AUTOTUBE AI - FALLBACK HISTORICO SEGUNDA ETAPA V3.0
+====================================================
+
+OBJETIVO
+-------
+Resolver seis contratos historicos que no obtuvieron archivo autentico sin
+reutilizar las imagenes y videos rechazados ni presentar stock falso como
+evidencia documental.
+
+CAMBIOS
+-------
+- Conserva dos rondas completas para buscar archivo real.
+- En la tercera ronda crea una tarjeta factual especifica para cada contrato:
+  Norbert Wiener, componentes electronicos, revista sobre maquinas pensantes,
+  impacto filosofico, debates de Dartmouth y ajedrez computacional.
+- Cada tarjeta tiene texto, estilo y geometria propios.
+- Preserva la descripcion editorial original como fuente autoritativa.
+- Los criterios validan frases visibles por separado; no exigen barras.
+- Mantiene el bloqueo del render mientras la auditoria final no sea APPROVED.
+
+ARCHIVOS
+--------
+pyproject.toml
+src/autotube/visuals/visual_repair.py
+src/autotube/visuals/local_asset_generator.py
+tests/test_second_historical_evidence_v3_0.py
+
+INSTALACION
+-----------
+Copiar esos archivos sobre el proyecto conservando sus rutas. No reemplazar
+otros archivos y no usar git add .
+
+VALIDACION
+----------
+python -m py_compile `
+  .\src\autotube\visuals\visual_repair.py `
+  .\src\autotube\visuals\local_asset_generator.py `
+  .\tests\test_second_historical_evidence_v3_0.py
+
+python -m unittest discover -s tests -v
+
+REPARACION RECOMENDADA
+----------------------
+autotube visual-repair `
+  --canal nexon_ia `
+  --assets "$coleccionValidada" `
+  --visual-audit "$auditPath" `
+  --limite 24 `
+  --ronda-inicial 3 `
+  --intentos 1
+
+No renderizar ni publicar hasta que una auditoria completa de los 65 recursos
+termine con Estado: APPROVED.

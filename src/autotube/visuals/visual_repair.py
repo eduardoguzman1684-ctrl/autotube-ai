@@ -16,7 +16,7 @@ from autotube.visuals.final_visual_auditor import (
 )
 
 
-REPAIR_VERSION = "visual_repair_v3.3"
+REPAIR_VERSION = "visual_repair_v3.4"
 
 
 class VisualRepairError(RuntimeError):
@@ -261,7 +261,60 @@ def _apply_editorial_fallback(
     description = ""
     card_style = ""
 
-    if "john mccarthy" in context:
+    if "norbert wiener" in context:
+        screen = "Norbert Wiener\nCibernética: control y comunicación"
+        description = (
+            "Tarjeta documental animada que identifica a Norbert Wiener y "
+            "su relación con la cibernética, el control y la comunicación."
+        )
+        card_style = "perfil_wiener"
+    elif (
+        "componentes electronicos antiguos" in context
+        or "procesando senales electricas" in context
+    ):
+        screen = "Señales eléctricas\nComponentes y circuitos de época"
+        description = (
+            "Tarjeta documental animada sobre componentes electrónicos "
+            "históricos procesando señales eléctricas en laboratorio."
+        )
+        card_style = "componentes_electronicos_historicos"
+    elif "revista cientifica" in context and "maquinas pensantes" in context:
+        screen = "Máquinas pensantes\nDebate científico · años 50"
+        description = (
+            "Tarjeta documental animada sobre el debate científico de los "
+            "años cincuenta acerca de las máquinas pensantes."
+        )
+        card_style = "revista_maquinas_pensantes"
+    elif "libro clasico" in context and (
+        "filosofia" in context or "tecnologia" in context
+    ):
+        screen = "Impacto filosófico\nMáquinas, mente y sociedad"
+        description = (
+            "Tarjeta documental animada sobre el impacto filosófico y social "
+            "de atribuir inteligencia a una máquina."
+        )
+        card_style = "libro_filosofia_tecnologia"
+    elif (
+        "investigadores" in context
+        and "mesa" in context
+        and ("aire libre" in context or "campus de dartmouth" in context)
+    ):
+        screen = "Dartmouth · verano de 1956\nIdeas alrededor de una mesa"
+        description = (
+            "Tarjeta documental animada sobre los debates colaborativos del "
+            "taller de Dartmouth durante el verano de 1956."
+        )
+        card_style = "mesa_dartmouth_exterior"
+    elif "tablero de ajedrez" in context and (
+        "computadora central" in context or "anos 50" in context
+    ):
+        screen = "El optimismo inicial\nAjedrez + computadora"
+        description = (
+            "Tarjeta documental animada sobre el ajedrez como desafío "
+            "temprano para la inteligencia artificial."
+        )
+        card_style = "ajedrez_computadora_historica"
+    elif "john mccarthy" in context:
         screen = "John McCarthy\nPadre de la Inteligencia Artificial"
         description = (
             "Tarjeta documental animada que identifica claramente a John "

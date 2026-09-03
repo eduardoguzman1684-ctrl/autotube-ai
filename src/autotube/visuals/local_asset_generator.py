@@ -1263,6 +1263,12 @@ def generar_tarjeta_editorial(
         "fundadores_dartmouth": 1,
         "flujo_inteligencia": 4,
         "documento_dartmouth": 6,
+        "perfil_wiener": 0,
+        "componentes_electronicos_historicos": 4,
+        "revista_maquinas_pensantes": 6,
+        "libro_filosofia_tecnologia": 3,
+        "mesa_dartmouth_exterior": 5,
+        "ajedrez_computadora_historica": 2,
     }
     variante = variantes.get(
         estilo,
