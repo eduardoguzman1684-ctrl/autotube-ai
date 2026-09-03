@@ -3152,6 +3152,18 @@ class RecolectorRecursos:
                         "texto_pantalla",
                         "",
                     ),
+                    "estilo_tarjeta": clip.get(
+                        "estilo_tarjeta",
+                        "",
+                    ),
+                    "descripcion_editorial_original": clip.get(
+                        "descripcion_editorial_original",
+                        "",
+                    ),
+                    "fallback_editorial": clip.get(
+                        "fallback_editorial",
+                        {},
+                    ),
                     "texto_narrado": clip.get(
                         "texto_narrado",
                         "",

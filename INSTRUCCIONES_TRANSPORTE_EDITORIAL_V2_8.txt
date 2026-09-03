@@ -1,0 +1,42 @@
+AUTOTUBE AI - TRANSPORTE DE METADATOS EDITORIALES V2.8
+======================================================================
+
+PROBLEMA CORREGIDO
+------------------
+La reparacion v2.7 asignaba una composicion distinta a cada tarjeta, pero el
+recolector no transportaba ese campo al manifiesto temporal. En un caso, la
+tarjeta de Claude Shannon termino siendo identica a un recurso anterior y fue
+descartada correctamente por SHA-256.
+
+SOLUCION
+--------
+El instalador incremental conserva estos campos al construir candidatos:
+- estilo_tarjeta
+- descripcion_editorial_original
+- fallback_editorial
+
+El instalador modifica solamente el bloque de metadatos del recolector y la
+version del proyecto. No reemplaza el archivo completo y conserva las mejoras
+de seleccion visual y render seguro v24.
+
+INSTALACION
+-----------
+python "$actualizacion\APLICAR_TRANSPORTE_EDITORIAL_V2_8.py" `
+  --proyecto "."
+
+VERIFICACION
+------------
+python -m py_compile `
+  .\src\autotube\visuals\asset_collector.py `
+  .\tests\test_editorial_transport_v2_8.py
+
+python -m unittest -v `
+  tests.test_editorial_transport_v2_8 `
+  tests.test_historical_evidence_v2_7 `
+  tests.test_editorial_fallback_v2_5 `
+  tests.test_visual_contract_v2_4 `
+  tests.test_visual_repair_v2_3 `
+  tests.test_final_visual_audit_v2_2
+
+El render continua bloqueado mientras una auditoria termine en REJECTED.
+======================================================================
