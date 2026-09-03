@@ -596,203 +596,15 @@ class RecolectorRecursos:
         carpeta_segmento: Path,
         posicion_clip: int,
     ) -> tuple[Path, dict[str, Any]] | None:
-        """Reutiliza solo una imagen del mismo segmento aprobada por CLIP."""
-        candidatos_actuales = self.recursos_aprobados_segmento.get(
-            segmento_indice,
-            [],
-        )
-        candidatos_historicos = self.recursos_historicos_por_titulo.get(
-            self._clave_segmento(titulo_segmento),
-            [],
-        )[:24]
-        candidatos = []
-        for registro in [*candidatos_actuales, *candidatos_historicos]:
-            archivo = Path(registro["archivo"])
-            usos = self.reutilizaciones_por_archivo.get(str(archivo), 0)
-            limite_usos = (
-                1 if bool(registro.get("historico", False))
-                else self.maximo_reutilizaciones
-            )
-            if archivo.is_file() and usos < limite_usos:
-                candidatos.append(registro)
-
-        if not candidatos:
-            return None
-
-        requisito = self._requisito_visual(clip)
-        mejor: tuple[dict[str, Any], dict[str, Any]] | None = None
-
-        for registro in candidatos:
-            archivo = Path(registro["archivo"])
-            verificacion = self.verificador_visual_local.seleccionar(
-                imagenes=[archivo],
-                requisito_visual=requisito,
-            )
-            if (
-                bool(verificacion.get("aprobada", False))
-                and int(verificacion.get("puntaje", 0)) >= 94
-                and (
-                    mejor is None
-                    or int(verificacion.get("puntaje", 0))
-                    > int(mejor[1].get("puntaje", 0))
-                )
-            ):
-                mejor = (registro, verificacion)
-
-        if mejor is None:
-            return None
-
-        registro, verificacion = mejor
-        origen = Path(registro["archivo"])
-        destino = carpeta_segmento / (
-            f"clip_{posicion_clip:02d}_reutilizado_clip_local"
-            f"{origen.suffix.lower()}"
-        )
-        destino.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(origen, destino)
-        self.reutilizaciones_por_archivo[str(origen)] = (
-            self.reutilizaciones_por_archivo.get(str(origen), 0) + 1
-        )
-
-        return destino, {
-            "fuente_original": str(registro["fuente"]),
-            "archivo_original": str(origen.resolve()),
-            "coleccion_historica": bool(
-                registro.get("historico", False)
-            ),
-            "manifiesto_original": str(
-                registro.get("manifiesto", "")
-            ),
-            "verificacion_visual": verificacion,
-            "regla": (
-                "Mismo segmento, pixeles verificados por CLIP, "
-                "puntaje minimo 94 y maximo dos reutilizaciones."
-            ),
-        }
+        """No reutiliza por similitud CLIP: CLIP solo sirve para ordenar."""
+        return None
 
     def _completar_cobertura_segmentos(
         self,
         elementos: list[dict[str, Any]],
     ) -> int:
-        """Cubre huecos con el recurso aprobado mas cercano del segmento."""
-        estados_pendientes = {
-            "pendiente_cuota_imagen_ia",
-            "pendiente_sin_recurso",
-        }
-        disponibles_por_segmento: dict[int, list[dict[str, Any]]] = {}
-
-        for elemento in elementos:
-            if str(elemento.get("estado", "")) != "descargado":
-                continue
-            archivo = Path(str(elemento.get("archivo", "")))
-            if not archivo.is_file():
-                continue
-            segmento = int(elemento.get("segmento_indice", 0) or 0)
-            disponibles_por_segmento.setdefault(segmento, []).append(elemento)
-
-        usos: dict[str, int] = {}
-        completados = 0
-
-        for elemento in elementos:
-            estado_anterior = str(elemento.get("estado", ""))
-            if estado_anterior not in estados_pendientes:
-                continue
-
-            segmento = int(elemento.get("segmento_indice", 0) or 0)
-            orden = int(elemento.get("clip_orden", 0) or 0)
-            candidatos = sorted(
-                disponibles_por_segmento.get(segmento, []),
-                key=lambda candidato: (
-                    usos.get(str(candidato.get("archivo", "")), 0),
-                    abs(int(candidato.get("clip_orden", 0) or 0) - orden),
-                ),
-            )
-            candidato = next(
-                (
-                    opcion
-                    for opcion in candidatos
-                    if usos.get(str(opcion.get("archivo", "")), 0) < 3
-                ),
-                None,
-            )
-            if candidato is None:
-                continue
-
-            origen = Path(str(candidato["archivo"]))
-            requisito = self._requisito_visual(elemento)
-            lamina = (
-                self.data_dir
-                / "cache"
-                / "verificacion_visual"
-                / (
-                    f"continuidad_s{segmento:02d}_"
-                    f"c{orden:03d}.jpg"
-                )
-            )
-            try:
-                verificacion = self.verificador_visual.seleccionar(
-                    imagenes=[origen],
-                    requisito_visual=requisito,
-                    lamina_temporal=lamina,
-                )
-            except Exception as error_remoto:
-                try:
-                    verificacion = self.verificador_visual_local.seleccionar(
-                        imagenes=[origen],
-                        requisito_visual=requisito,
-                    )
-                except Exception as error_local:
-                    print(
-                        "  COBERTURA RECHAZADA: no fue posible verificar "
-                        f"segmento {segmento}, clip {orden}: "
-                        f"{error_remoto}; {error_local}"
-                    )
-                    continue
-
-            if (
-                not bool(verificacion.get("aprobada", False))
-                or int(verificacion.get("seleccion", 0)) != 1
-                or int(verificacion.get("puntaje", 0)) < 94
-                or not bool(verificacion.get("cumple_concepto", False))
-                or not bool(verificacion.get("cumple_obligatorios", False))
-                or bool(verificacion.get("viola_prohibidos", True))
-            ):
-                print(
-                    "  COBERTURA RECHAZADA POR PIXELES: "
-                    f"segmento {segmento}, clip {orden}; "
-                    f"{verificacion.get('motivo', 'sin coincidencia directa')}"
-                )
-                continue
-
-            carpeta = origen.parent
-            destino = carpeta / (
-                f"clip_{orden:02d}_continuidad_segmento{origen.suffix.lower()}"
-            )
-            shutil.copy2(origen, destino)
-            usos[str(origen)] = usos.get(str(origen), 0) + 1
-
-            elemento["estado"] = "descargado"
-            elemento["fuente"] = "continuidad_segmento_aprobada"
-            elemento["archivo"] = str(destino.resolve())
-            elemento["continuidad_visual"] = {
-                "estado_original": estado_anterior,
-                "archivo_original": str(origen.resolve()),
-                "fuente_original": str(candidato.get("fuente", "")),
-                "segmento": segmento,
-                "verificacion_visual": verificacion,
-                "regla": (
-                    "Recurso del mismo segmento aprobado nuevamente contra "
-                    "el contrato visual exacto del clip y sus pixeles reales."
-                ),
-            }
-            elemento.pop("motivo", None)
-            completados += 1
-            print(
-                "  COBERTURA CONTEXTUAL: "
-                f"segmento {segmento}, clip {orden}, origen {origen.name}"
-            )
-
-        return completados
+        """No rellena huecos con otra escena solo por similitud CLIP."""
+        return 0
 
     def _obtener_generador_imagen_ia(
         self,
@@ -2631,54 +2443,16 @@ class RecolectorRecursos:
 
                 if grupos_rechazados:
                     print(
-                        "  CLIP local revisara los rechazos de Gemini: "
-                        f"{len(grupos_rechazados)} clips."
+                        "  BLOQUEO SEMANTICO: los rechazos de Gemini no "
+                        "seran promovidos por CLIP local."
                     )
-
-                    try:
-                        resultados_locales = (
-                            self.verificador_visual_local.seleccionar_lote(
-                                grupos=grupos_rechazados,
-                                lamina_temporal=lamina,
-                            )
-                        )
-
-                        for identificador_local, resultado_local in (
-                            resultados_locales.items()
-                        ):
-                            if (
-                                int(resultado_local.get("seleccion", 0)) > 0
-                                and bool(
-                                    resultado_local.get("aprobada", False)
-                                )
-                            ):
-                                resultados[identificador_local] = resultado_local
-
-                    except Exception as error:
-                        print(
-                            "  AVISO: CLIP local no pudo revisar "
-                            f"los rechazos: {error}"
-                        )
 
             if not resultados:
                 print(
-                    "  Gemini no esta disponible; "
-                    "verificando las imagenes con CLIP local."
+                    "  BLOQUEO SEMANTICO: Gemini no esta disponible; "
+                    "CLIP no aprobara recursos por si solo."
                 )
-
-                try:
-                    resultados = (
-                        self.verificador_visual_local.seleccionar_lote(
-                            grupos=grupos_pendientes,
-                            lamina_temporal=lamina,
-                        )
-                    )
-                except Exception as error:
-                    resultados = {}
-                    print(
-                        "  BLOQUEO ESTRICTO: CLIP local tampoco "
-                        f"esta disponible: {error}"
-                    )
+                resultados = {}
 
                 for grupo_respaldo in grupos_pendientes:
                     identificador_respaldo = str(
@@ -3034,34 +2808,11 @@ class RecolectorRecursos:
                 )
                 return None
 
-        if (
-            int(verificacion.get("seleccion", 0)) == 0
-            and verificacion.get("verificador") != "CLIP local"
-        ):
+        if int(verificacion.get("seleccion", 0)) == 0:
             print(
-                "  Gemini rechazo todas las candidatas; "
-                "CLIP local realizara una segunda revision."
+                "  BLOQUEO SEMANTICO: el rechazo visual se conserva; "
+                "CLIP local no puede revocarlo."
             )
-
-            try:
-                verificacion_local = (
-                    self.verificador_visual_local.seleccionar(
-                        imagenes=[
-                            candidato[1]
-                            for candidato in candidatos
-                        ],
-                        requisito_visual=requisito,
-                        lamina_temporal=lamina,
-                    )
-                )
-
-                if bool(verificacion_local.get("aprobada", False)):
-                    verificacion = verificacion_local
-            except Exception as error_local:
-                print(
-                    "  AVISO: CLIP local no pudo realizar "
-                    f"la segunda revision: {error_local}"
-                )
 
         seleccion = int(
             verificacion.get(

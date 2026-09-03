@@ -352,17 +352,12 @@ class VerificadorVisualCLIP:
             and mejor["prohibido_maximo"]
             >= self.similitud_minima - 0.02
         )
-        aprobada = (
-            cumple_concepto
-            and cumple_obligatorios
-            and seleccion_clara
-            and not viola_prohibidos
-        )
-        puntaje = self._puntaje_publico(
-            mejor["combinado"],
-            aprobada,
-        )
-        seleccion = mejor["indice"] + 1 if aprobada else 0
+        # CLIP es util para ordenar candidatos, pero no identifica con
+        # fiabilidad personas, fechas, acciones ni escenas documentales finas.
+        # Nunca puede conceder la aprobacion editorial final.
+        aprobada = False
+        puntaje = 0
+        seleccion = 0
 
         if aprobada:
             motivo = (

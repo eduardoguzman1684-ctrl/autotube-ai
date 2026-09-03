@@ -202,7 +202,7 @@ def configuracion_cpu(
 def seleccionar_codificador(
     crf_cpu: int,
     preset_cpu: str,
-    preferir_qsv: bool = True,
+    preferir_qsv: bool = False,
 ) -> ConfiguracionCodificador:
     """Selecciona QSV automaticamente o devuelve CPU."""
     modo = _modo_solicitado()

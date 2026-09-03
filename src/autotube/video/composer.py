@@ -902,6 +902,21 @@ class CompositorVideo:
                 f"No se generó el clip normalizado: {destino}"
             )
 
+    def _verificar_decodificacion_completa(self, video: Path) -> None:
+        """Decodifica todo el video; bloquea archivos truncados o corruptos."""
+        comando = [
+            "ffmpeg", "-v", "error", "-i", str(video),
+            "-map", "0:v:0", "-f", "null", "-",
+        ]
+        resultado = subprocess.run(
+            comando, capture_output=True, text=True, timeout=7200,
+        )
+        if resultado.returncode != 0:
+            raise RuntimeError(
+                "CONTROL DE RENDER: el video no se puede decodificar completo: "
+                + (resultado.stderr or "error desconocido")[-1200:]
+            )
+
     def concatenar(
         self,
         clips: list[Path],
@@ -931,49 +946,18 @@ class CompositorVideo:
             encoding="utf-8",
         )
 
-        try:
-            self.ejecutar_ffmpeg(
-                [
-                    "-f",
-                    "concat",
-                    "-safe",
-                    "0",
-                    "-i",
-                    str(lista),
-                    "-an",
-                    "-c:v",
-                    "copy",
-                    "-movflags",
-                    "+faststart",
-                    str(destino),
-                ],
-                timeout=1800,
-            )
-
-        except RuntimeError:
-            self.ejecutar_ffmpeg(
-                [
-                    "-f",
-                    "concat",
-                    "-safe",
-                    "0",
-                    "-i",
-                    str(lista),
-                    "-an",
-                    "-c:v",
-                    "libx264",
-                    "-preset",
-                    preset,
-                    "-crf",
-                    str(crf),
-                    "-pix_fmt",
-                    "yuv420p",
-                    "-movflags",
-                    "+faststart",
-                    str(destino),
-                ],
-                timeout=3600,
-            )
+        # La copia directa puede conservar timebases incompatibles y producir
+        # mosaicos aunque FFmpeg termine con codigo cero. Siempre recodificar.
+        self.ejecutar_ffmpeg(
+            [
+                "-f", "concat", "-safe", "0", "-i", str(lista),
+                "-an", "-c:v", "libx264", "-preset", preset,
+                "-crf", str(crf), "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart", str(destino),
+            ],
+            timeout=3600,
+        )
+        self._verificar_decodificacion_completa(destino)
 
     def agregar_audio(
         self,

@@ -301,4 +301,16 @@ class FinalizadorVideo:
                 "FFmpeg terminó sin crear el video final."
             )
 
+        control = subprocess.run(
+            [ffmpeg, "-v", "error", "-i", str(salida),
+             "-map", "0:v:0", "-f", "null", "-"],
+            cwd=self.project_root, capture_output=True, text=True, timeout=7200,
+        )
+        if control.returncode != 0:
+            salida.unlink(missing_ok=True)
+            raise RuntimeError(
+                "CONTROL DE RENDER FINAL: el MP4 no se decodifica completo: "
+                + (control.stderr or "error desconocido")[-1200:]
+            )
+
         return salida, True
