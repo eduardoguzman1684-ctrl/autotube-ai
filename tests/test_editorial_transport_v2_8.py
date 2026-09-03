@@ -21,11 +21,11 @@ class EditorialTransportV28Test(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertEqual(source.count(f'"{field}": clip.get('), 1)
 
-    def test_project_version_is_v2_8(self) -> None:
+    def test_project_version_is_at_least_v2_8(self) -> None:
         pyproject = (
             Path(__file__).resolve().parents[1] / "pyproject.toml"
         ).read_text(encoding="utf-8-sig")
-        self.assertIn('version = "0.3.8"', pyproject)
+        self.assertRegex(pyproject, r'version = "0\.3\.(?:[89]|[1-9][0-9]+)"')
 
 
 if __name__ == "__main__":

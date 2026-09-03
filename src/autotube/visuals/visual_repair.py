@@ -16,7 +16,7 @@ from autotube.visuals.final_visual_auditor import (
 )
 
 
-REPAIR_VERSION = "visual_repair_v3.2"
+REPAIR_VERSION = "visual_repair_v3.3"
 
 
 class VisualRepairError(RuntimeError):
@@ -247,12 +247,16 @@ def _apply_editorial_fallback(
     if round_number < 3:
         return clip
 
-    context = _normalized(
-        " ".join(
-            str(clip.get(key, ""))
-            for key in ("descripcion", "texto_pantalla", "texto_narrado")
-        )
-    )
+    # Si una reparacion previa contamino el texto visible o la descripcion,
+    # la descripcion editorial original es la fuente autoritativa. No se
+    # mezclan nombres mencionados secundariamente en la narracion.
+    contract_source = str(
+        clip.get("descripcion_editorial_original", "")
+        or clip.get("descripcion", "")
+        or clip.get("texto_narrado", "")
+        or clip.get("texto_pantalla", "")
+    ).strip()
+    context = _normalized(contract_source)
     screen = ""
     description = ""
     card_style = ""
@@ -337,16 +341,29 @@ def _apply_editorial_fallback(
     if not screen:
         return clip
 
-    original_description = str(clip.get("descripcion", ""))
+    original_description = str(
+        clip.get("descripcion_editorial_original", "")
+        or clip.get("descripcion", "")
+    )
     clip["descripcion_editorial_original"] = original_description
     clip["tipo_recurso"] = "texto_animado"
     clip["estilo_tarjeta"] = card_style or _event_id(clip)
     clip["texto_pantalla"] = screen
     clip["descripcion"] = description
     clip["concepto_central"] = description
+    visible_phrases = [
+        phrase.strip()
+        for phrase in screen.splitlines()
+        if phrase.strip()
+    ]
     clip["criterios_obligatorios"] = [
         description,
-        f'El texto visible debe contener: "{screen.replace(chr(10), " / ")}".',
+        (
+            "El texto visible debe incluir todas estas frases: "
+            + "; ".join(f'"{phrase}"' for phrase in visible_phrases)
+            + ". Pueden aparecer en lineas distintas y no requieren barras "
+            "ni otros caracteres separadores."
+        ),
         "La tarjeta debe ser legible, especifica y directamente vinculada a la narracion.",
     ]
     clip["elementos_prohibidos"] = [

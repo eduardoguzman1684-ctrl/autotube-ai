@@ -1,0 +1,41 @@
+AUTOTUBE AI - RECUPERACION DE CONTRATOS EDITORIALES V2.9
+======================================================================
+
+PROBLEMAS CORREGIDOS
+--------------------
+1. Una barra usada para representar un salto de linea en los criterios era
+   interpretada por Gemini como un caracter visible obligatorio.
+2. Un recurso contaminado podia conservar el nombre de otro investigador y
+   tener prioridad sobre su descripcion editorial original.
+
+SOLUCION
+--------
+- Los criterios enumeran las frases por separado y declaran expresamente que
+  no requieren barras ni caracteres separadores.
+- descripcion_editorial_original se convierte en la fuente autoritativa al
+  reconstruir un contrato.
+- La descripcion original no se sobrescribe durante reparaciones posteriores.
+- El render y la publicacion continúan bloqueados ante cualquier rechazo.
+
+ARCHIVOS
+--------
+- pyproject.toml
+- src/autotube/visuals/visual_repair.py
+- tests/test_editorial_contract_recovery_v2_9.py
+- INSTRUCCIONES_RECUPERACION_CONTRATOS_V2_9.txt
+
+PRUEBA RECOMENDADA
+------------------
+python -m py_compile `
+  .\src\autotube\visuals\visual_repair.py `
+  .\tests\test_editorial_contract_recovery_v2_9.py
+
+python -m unittest -v `
+  tests.test_editorial_contract_recovery_v2_9 `
+  tests.test_editorial_transport_v2_8 `
+  tests.test_historical_evidence_v2_7 `
+  tests.test_editorial_fallback_v2_5
+
+No edites manualmente assets_manifest.json. La reparacion selectiva reconstruye
+los contratos y mantiene el manifiesto previo en su carpeta de respaldo.
+======================================================================
