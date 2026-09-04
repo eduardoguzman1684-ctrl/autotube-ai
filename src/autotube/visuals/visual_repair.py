@@ -16,7 +16,7 @@ from autotube.visuals.final_visual_auditor import (
 )
 
 
-REPAIR_VERSION = "visual_repair_v3.6"
+REPAIR_VERSION = "visual_repair_v3.7"
 
 
 class VisualRepairError(RuntimeError):
@@ -328,6 +328,76 @@ def _apply_editorial_fallback(
             "financiamiento y entusiasmo institucional por la IA."
         )
         card_style = "financiamiento_ia_inicial"
+    elif (
+        "unidades de disco duro magnetico" in context
+        or ("capacidad de almacenamiento" in context and "anos 60" in context)
+    ):
+        screen = "Memoria magnética · años 60\nCapacidad limitada"
+        description = (
+            "Tarjeta documental animada sobre la capacidad limitada de las "
+            "grandes unidades de almacenamiento magnético de los años sesenta."
+        )
+        card_style = "almacenamiento_magnetico_1960"
+    elif (
+        "diccionarios multilingues" in context
+        or "centro de traduccion linguistica" in context
+    ):
+        screen = "Traducción automática\nLa ambigüedad del lenguaje"
+        description = (
+            "Tarjeta documental animada sobre las dificultades lingüísticas "
+            "que frustraron la traducción automática temprana."
+        )
+        card_style = "traduccion_automatica_1960"
+    elif (
+        "informe oficial gubernamental" in context
+        or "informe lighthill" in context
+    ):
+        screen = "Informe Lighthill · 1973\nEl optimismo bajo examen"
+        description = (
+            "Tarjeta documental animada que identifica el Informe Lighthill "
+            "de 1973 y la revisión crítica de las promesas de la IA."
+        )
+        card_style = "informe_lighthill_1973"
+    elif (
+        "pasillo vacio" in context
+        or "recortes presupuestarios" in context
+    ):
+        screen = "Primer invierno de la IA\nFondos y expectativas caen"
+        description = (
+            "Tarjeta documental animada sobre los recortes de financiación y "
+            "el comienzo del primer invierno de la inteligencia artificial."
+        )
+        card_style = "invierno_ia_1970"
+    elif (
+        "investigador solitario" in context
+        and "diagramas de flujo" in context
+    ):
+        screen = "Reglas fijas no bastan\nRepensar la inteligencia"
+        description = (
+            "Tarjeta documental animada sobre la revisión de los límites de "
+            "la inteligencia simbólica basada únicamente en reglas fijas."
+        )
+        card_style = "limites_reglas_fijas"
+    elif (
+        "manuales tecnicos encuadernados" in context
+        or ("reglas logicas" in context and "anos 80" in context)
+    ):
+        screen = "Sistemas expertos · años 80\nMiles de reglas manuales"
+        description = (
+            "Tarjeta documental animada sobre los sistemas expertos de los "
+            "años ochenta construidos con miles de reglas escritas a mano."
+        )
+        card_style = "sistemas_expertos_reglas"
+    elif (
+        "computadora personal de escritorio" in context
+        and "graficos de datos" in context
+    ):
+        screen = "Machine Learning · años 90\nAprender de los datos"
+        description = (
+            "Tarjeta documental animada sobre la transición desde reglas "
+            "explícitas hacia algoritmos que aprenden patrones de los datos."
+        )
+        card_style = "machine_learning_datos_1990"
     elif "lectora de tarjetas perforadas" in context:
         screen = "Tarjetas perforadas\nLectura de datos · años 50"
         description = (

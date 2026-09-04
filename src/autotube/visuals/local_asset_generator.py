@@ -1280,6 +1280,13 @@ def generar_tarjeta_editorial(
         "principia_mathematica": 3,
         "auditorio_cientifico_1950": 5,
         "financiamiento_ia_inicial": 1,
+        "almacenamiento_magnetico_1960": 6,
+        "traduccion_automatica_1960": 2,
+        "informe_lighthill_1973": 3,
+        "invierno_ia_1970": 4,
+        "limites_reglas_fijas": 0,
+        "sistemas_expertos_reglas": 5,
+        "machine_learning_datos_1990": 1,
     }
     variante = variantes.get(
         estilo,

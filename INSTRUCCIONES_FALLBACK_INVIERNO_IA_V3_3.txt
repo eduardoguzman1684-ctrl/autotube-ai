@@ -1,0 +1,54 @@
+AUTOTUBE AI - FALLBACK INVIERNO DE LA IA V3.3
+==============================================
+
+OBJETIVO
+--------
+Resolver siete falsos positivos de los segmentos 7 y 8 sin reutilizar material
+generico ni presentar recursos modernos como evidencia historica.
+
+CONTRATOS CUBIERTOS
+-------------------
+- Almacenamiento magnetico limitado de los anos sesenta.
+- Dificultades de la traduccion automatica temprana.
+- Informe Lighthill de 1973.
+- Recortes y primer invierno de la inteligencia artificial.
+- Limites de la inteligencia simbolica basada en reglas fijas.
+- Sistemas expertos de los anos ochenta.
+- Transicion al aprendizaje automatico basado en datos.
+
+COMPORTAMIENTO
+--------------
+- Conserva dos rondas para buscar archivo autentico.
+- Desde la tercera ronda crea una tarjeta factual especifica por contrato.
+- Cada tarjeta usa una composicion visual distinta de sus tarjetas adyacentes.
+- Preserva la descripcion editorial original como autoridad.
+- Mantiene bloqueado el render hasta aprobar los 65 recursos.
+
+ARCHIVOS
+--------
+pyproject.toml
+src/autotube/visuals/visual_repair.py
+src/autotube/visuals/local_asset_generator.py
+tests/test_ai_winter_expert_systems_fallback_v3_3.py
+
+VALIDACION
+----------
+python -m py_compile `
+  .\src\autotube\visuals\visual_repair.py `
+  .\src\autotube\visuals\local_asset_generator.py `
+  .\tests\test_ai_winter_expert_systems_fallback_v3_3.py
+
+python -m unittest discover -s tests -v
+
+REPARACION
+----------
+autotube visual-repair `
+  --canal nexon_ia `
+  --assets "$coleccionValidada" `
+  --visual-audit "$auditPath" `
+  --limite 44 `
+  --ronda-inicial 3 `
+  --intentos 1
+
+No renderizar ni publicar hasta que una auditoria completa de los 65 recursos
+termine con Estado: APPROVED.
