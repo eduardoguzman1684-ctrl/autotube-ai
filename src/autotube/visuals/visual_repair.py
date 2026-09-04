@@ -16,7 +16,7 @@ from autotube.visuals.final_visual_auditor import (
 )
 
 
-REPAIR_VERSION = "visual_repair_v3.5"
+REPAIR_VERSION = "visual_repair_v3.6"
 
 
 class VisualRepairError(RuntimeError):
@@ -261,7 +261,74 @@ def _apply_editorial_fallback(
     description = ""
     card_style = ""
 
-    if "lectora de tarjetas perforadas" in context:
+    if (
+        "modelo anatomico" in context
+        and "cerebro humano" in context
+    ):
+        screen = "Cerebro y mente\nLa complejidad subestimada"
+        description = (
+            "Tarjeta documental animada sobre la complejidad del cerebro "
+            "humano que los primeros investigadores de IA subestimaron."
+        )
+        card_style = "cerebro_anatomico_historico"
+    elif (
+        "tarjetas perforadas apiladas" in context
+        or "cajas de almacenamiento de carton" in context
+    ):
+        screen = "Tarjetas perforadas\nDatos almacenados en papel"
+        description = (
+            "Tarjeta documental animada sobre el almacenamiento físico de "
+            "datos mediante tarjetas perforadas organizadas en cajas."
+        )
+        card_style = "tarjetas_perforadas_archivadas"
+    elif "logic theorist" in context or (
+        "allen newell" in context
+        and "impresiones de software logico" in context
+    ):
+        screen = "Logic Theorist\nNewell + Simon · 1956"
+        description = (
+            "Tarjeta documental animada que identifica Logic Theorist, de "
+            "Allen Newell y Herbert Simon, como programa pionero de 1956."
+        )
+        card_style = "logic_theorist_1956"
+    elif (
+        "listados de codigo fuente impresos" in context
+        or ("papel continuo" in context and "1956" in context)
+    ):
+        screen = "Código impreso · 1956\nEl primer programa de IA"
+        description = (
+            "Tarjeta documental animada sobre los listados impresos del "
+            "software lógico pionero presentado en 1956."
+        )
+        card_style = "codigo_impreso_1956"
+    elif "principia mathematica" in context:
+        screen = "Principia Mathematica\nTeoremas demostrados por máquina"
+        description = (
+            "Tarjeta documental animada sobre los teoremas de Principia "
+            "Mathematica demostrados por Logic Theorist."
+        )
+        card_style = "principia_mathematica"
+    elif (
+        "auditorio universitario" in context
+        and "conferencia cientifica" in context
+    ):
+        screen = "Conferencia científica\nLa IA gana respaldo"
+        description = (
+            "Tarjeta documental animada sobre el respaldo académico e "
+            "institucional obtenido por la inteligencia artificial."
+        )
+        card_style = "auditorio_cientifico_1950"
+    elif (
+        "documentos de financiacion" in context
+        or "oficina de la administracion universitaria" in context
+    ):
+        screen = "Financiamiento científico\nComienza una nueva etapa"
+        description = (
+            "Tarjeta documental animada sobre el inicio de una etapa de "
+            "financiamiento y entusiasmo institucional por la IA."
+        )
+        card_style = "financiamiento_ia_inicial"
+    elif "lectora de tarjetas perforadas" in context:
         screen = "Tarjetas perforadas\nLectura de datos · años 50"
         description = (
             "Tarjeta documental animada que explica la lectura de datos "

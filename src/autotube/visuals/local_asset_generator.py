@@ -1273,6 +1273,13 @@ def generar_tarjeta_editorial(
         "operador_mainframe_interruptores": 0,
         "diagrama_reglas_simbolicas": 2,
         "consola_mainframe_luces": 4,
+        "cerebro_anatomico_historico": 0,
+        "tarjetas_perforadas_archivadas": 6,
+        "logic_theorist_1956": 2,
+        "codigo_impreso_1956": 4,
+        "principia_mathematica": 3,
+        "auditorio_cientifico_1950": 5,
+        "financiamiento_ia_inicial": 1,
     }
     variante = variantes.get(
         estilo,

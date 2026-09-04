@@ -1,0 +1,55 @@
+AUTOTUBE AI - FALLBACK LOGIC THEORIST V3.2
+==========================================
+
+OBJETIVO
+--------
+Resolver siete falsos positivos de los segmentos 5 y 6 sin reutilizar material
+generico ni presentar recursos modernos como evidencia historica.
+
+CONTRATOS CUBIERTOS
+-------------------
+- Modelo anatomico del cerebro humano.
+- Tarjetas perforadas almacenadas en cajas.
+- Logic Theorist de Allen Newell y Herbert Simon.
+- Listados de codigo impresos en papel continuo en 1956.
+- Principia Mathematica.
+- Auditorio de una conferencia cientifica de los anos 50.
+- Documentos de financiacion de la primera etapa de la IA.
+
+COMPORTAMIENTO
+--------------
+- Conserva dos rondas para buscar archivo autentico.
+- Desde la tercera ronda crea una tarjeta factual especifica por contrato.
+- Logic Theorist usa una identidad distinta de la tarjeta general de Newell y
+  Simon, evitando duplicados visuales y semanticos.
+- Preserva la descripcion editorial original como autoridad.
+- Mantiene bloqueado el render hasta aprobar los 65 recursos.
+
+ARCHIVOS
+--------
+pyproject.toml
+src/autotube/visuals/visual_repair.py
+src/autotube/visuals/local_asset_generator.py
+tests/test_logic_theorist_fallback_v3_2.py
+
+VALIDACION
+----------
+python -m py_compile `
+  .\src\autotube\visuals\visual_repair.py `
+  .\src\autotube\visuals\local_asset_generator.py `
+  .\tests\test_logic_theorist_fallback_v3_2.py
+
+python -m unittest discover -s tests -v
+
+REPARACION
+----------
+autotube visual-repair `
+  --canal nexon_ia `
+  --assets "$coleccionValidada" `
+  --visual-audit "$auditPath" `
+  --limite 32 `
+  --ronda-inicial 3 `
+  --intentos 1
+
+No renderizar ni publicar hasta que una auditoria completa de los 65 recursos
+termine con Estado: APPROVED.
