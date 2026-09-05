@@ -16,7 +16,92 @@ from autotube.visuals.final_visual_auditor import (
 )
 
 
-REPAIR_VERSION = "visual_repair_v3.7"
+REPAIR_VERSION = "visual_repair_v3.8"
+
+
+FINAL_FACTUAL_CONTRACTS: dict[str, dict[str, Any]] = {
+    "s09_c001": {
+        "tokens": ("frank rosenblatt", "perceptron mark i"),
+        "screen": "Frank Rosenblatt\nPerceptrón Mark I · 1958",
+        "description": (
+            "Tarjeta documental animada que identifica a Frank Rosenblatt y "
+            "el Perceptrón Mark I desarrollado en Cornell en 1958."
+        ),
+        "style": "rosenblatt_perceptron_1958",
+    },
+    "s09_c002": {
+        "tokens": ("capas interconectadas", "red neuronal artificial"),
+        "screen": "Red neuronal artificial\nCapas de neuronas conectadas",
+        "description": (
+            "Tarjeta documental animada que explica una red neuronal artificial "
+            "como capas interconectadas de unidades matemáticas."
+        ),
+        "style": "arquitectura_red_neuronal",
+    },
+    "s09_c004": {
+        "tokens": ("tablero tradicional del juego de go", "piedras negras y blancas"),
+        "screen": "El desafío del Go\nEstrategia más allá de reglas fijas",
+        "description": (
+            "Tarjeta documental animada sobre el juego de Go como desafío de "
+            "estrategia y aprendizaje para la inteligencia artificial."
+        ),
+        "style": "desafio_go_ia",
+    },
+    "s09_c005": {
+        "tokens": ("centro de datos moderno", "servidores operativos"),
+        "screen": "Centro de datos moderno\nIA entrenada a gran escala",
+        "description": (
+            "Tarjeta documental animada sobre la infraestructura de servidores "
+            "que permite entrenar y operar inteligencia artificial a gran escala."
+        ),
+        "style": "centro_datos_ia_moderno",
+    },
+    "s10_c001": {
+        "tokens": ("oficina corporativa tecnologica", "profesionales trabajando"),
+        "screen": "IA en la empresa\nPersonas + tecnología",
+        "description": (
+            "Tarjeta documental animada sobre profesionales que colaboran con "
+            "tecnologías de inteligencia artificial en la empresa contemporánea."
+        ),
+        "style": "ia_empresa_contemporanea",
+    },
+    "s11_c001": {
+        "tokens": ("panel de debate", "regulaciones tecnologicas"),
+        "screen": "Regulación internacional\nGobernar la inteligencia artificial",
+        "description": (
+            "Tarjeta documental animada sobre el debate internacional para "
+            "regular y gobernar responsablemente la inteligencia artificial."
+        ),
+        "style": "regulacion_ia_internacional",
+    },
+    "s11_c004": {
+        "tokens": ("analistas de ciberseguridad", "proteccion de datos"),
+        "screen": "Ciberseguridad y privacidad\nProteger datos y sistemas",
+        "description": (
+            "Tarjeta documental animada sobre la protección de datos, la "
+            "privacidad y la seguridad de los sistemas digitales."
+        ),
+        "style": "ciberseguridad_privacidad",
+    },
+    "s11_c005": {
+        "tokens": ("ciencia cognitiva", "cognicion artificial"),
+        "screen": "Cognición artificial\nComprender y simular la mente",
+        "description": (
+            "Tarjeta documental animada sobre la investigación en ciencia "
+            "cognitiva y los intentos de comprender y simular la mente."
+        ),
+        "style": "cognicion_artificial_agi",
+    },
+    "s12_c005": {
+        "tokens": ("futuro tecnologico sostenible", "comunidad diversa"),
+        "screen": "Futuro tecnológico sostenible\nComunidad + investigación",
+        "description": (
+            "Tarjeta documental animada sobre una comunidad diversa que orienta "
+            "la innovación hacia un futuro tecnológico sostenible y humano."
+        ),
+        "style": "futuro_tecnologico_sostenible",
+    },
+}
 
 
 class VisualRepairError(RuntimeError):
@@ -261,7 +346,14 @@ def _apply_editorial_fallback(
     description = ""
     card_style = ""
 
-    if (
+    exact_contract = FINAL_FACTUAL_CONTRACTS.get(_event_id(clip))
+    if exact_contract and any(
+        token in context for token in exact_contract["tokens"]
+    ):
+        screen = str(exact_contract["screen"])
+        description = str(exact_contract["description"])
+        card_style = str(exact_contract["style"])
+    elif (
         "modelo anatomico" in context
         and "cerebro humano" in context
     ):
@@ -762,6 +854,7 @@ class ReparadorVisual:
         limit: int = 0,
         attempts: int = 3,
         start_round: int = 1,
+        target_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         assets_file = Path(assets_path).expanduser().resolve()
         if not assets_file.is_file():
@@ -823,6 +916,32 @@ class ReparadorVisual:
             for item in audit_elements
             if isinstance(item, dict) and not bool(item.get("approved"))
         }
+        explicit_targets: list[str] = []
+        for raw_target in target_ids or []:
+            event_id = str(raw_target).strip().lower()
+            if not re.fullmatch(r"s\d{2}_c\d{3}", event_id):
+                raise VisualRepairError(
+                    f"ID de objetivo invalido: {raw_target}. Usa sNN_cNNN."
+                )
+            if event_id not in explicit_targets:
+                explicit_targets.append(event_id)
+        unknown_targets = [
+            event_id for event_id in explicit_targets if event_id not in by_id
+        ]
+        if unknown_targets:
+            raise VisualRepairError(
+                "Objetivos inexistentes en el manifiesto: "
+                + ", ".join(unknown_targets)
+            )
+        for event_id in explicit_targets:
+            rejected_audit.setdefault(
+                event_id,
+                {
+                    "id": event_id,
+                    "approved": False,
+                    "reason": "Objetivo explicito de la reparacion final.",
+                },
+            )
         remaining = {
             event_id: by_id[event_id]
             for event_id in rejected_audit
@@ -858,6 +977,8 @@ class ReparadorVisual:
         for item in elements:
             if not isinstance(item, dict):
                 continue
+            if _event_id(item) in remaining:
+                continue
             path = Path(str(item.get("archivo", ""))).expanduser()
             if path.is_file():
                 tried_hashes.add(_sha256(path))
@@ -866,6 +987,8 @@ class ReparadorVisual:
         replacement_log: list[dict[str, Any]] = []
         intermediate_audits: list[str] = []
         required_assets = int(initial_audit.get("audited_assets", 0) or 0)
+        if explicit_targets:
+            required_assets = len(elements)
         if limit > 0:
             required_assets = min(required_assets or limit, limit)
         last_round = start_round + attempts - 1

@@ -398,6 +398,15 @@ def crear_parser() -> argparse.ArgumentParser:
         help="Primera estrategia a ejecutar; permite continuar sin repetir rondas.",
     )
     visual_repair_parser.add_argument(
+        "--objetivos",
+        nargs="+",
+        default=None,
+        help=(
+            "IDs exactos que deben repararse, por ejemplo s09_c001. "
+            "Permite completar una auditoria parcial sin adivinar por posicion."
+        ),
+    )
+    visual_repair_parser.add_argument(
         "--canal",
         choices=CHANNEL_CHOICES,
         default=DEFAULT_CHANNEL,
@@ -1965,6 +1974,7 @@ def reparar_visuales_rechazados(argumentos: argparse.Namespace) -> None:
         limit=max(0, int(argumentos.limite)),
         attempts=int(argumentos.intentos),
         start_round=int(argumentos.ronda_inicial),
+        target_ids=getattr(argumentos, "objetivos", None),
     )
 
     print("\nREPARACION VISUAL SELECTIVA")

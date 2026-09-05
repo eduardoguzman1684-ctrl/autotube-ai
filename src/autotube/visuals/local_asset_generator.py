@@ -1287,6 +1287,15 @@ def generar_tarjeta_editorial(
         "limites_reglas_fijas": 0,
         "sistemas_expertos_reglas": 5,
         "machine_learning_datos_1990": 1,
+        "rosenblatt_perceptron_1958": 0,
+        "arquitectura_red_neuronal": 2,
+        "desafio_go_ia": 3,
+        "centro_datos_ia_moderno": 4,
+        "ia_empresa_contemporanea": 6,
+        "regulacion_ia_internacional": 1,
+        "ciberseguridad_privacidad": 5,
+        "cognicion_artificial_agi": 2,
+        "futuro_tecnologico_sostenible": 3,
     }
     variante = variantes.get(
         estilo,

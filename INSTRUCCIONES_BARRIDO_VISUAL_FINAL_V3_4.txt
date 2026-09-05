@@ -1,0 +1,42 @@
+AUTOTUBE AI - BARRIDO VISUAL FINAL V3.4
+=======================================
+
+OBJETIVO
+--------
+Terminar la reparacion visual mediante nueve contratos locales exactos y una
+seleccion explicita por ID, sin depender de la posicion de una auditoria parcial.
+
+MEJORAS
+-------
+- Nuevo parametro --objetivos para visual-repair.
+- Los IDs indicados se incorporan aunque no aparezcan en la auditoria parcial.
+- Los objetivos se validan contra el manifiesto antes de modificar archivos.
+- Al usar objetivos explicitos, la auditoria final siempre revisa los 65 recursos.
+- Los recursos objetivo no se confunden con duplicados de sus archivos rechazados.
+- Nueve tarjetas factuales y visualmente diferenciadas para los segmentos 9 a 12.
+- No busca stock ni invoca Workers AI al comenzar directamente en la ronda 3.
+
+VALIDACION
+----------
+python -m py_compile `
+  .\src\autotube\main.py `
+  .\src\autotube\visuals\visual_repair.py `
+  .\src\autotube\visuals\local_asset_generator.py `
+  .\tests\test_final_visual_sweep_v3_4.py
+
+python -m unittest discover -s tests -v
+
+REPARACION FINAL
+----------------
+autotube visual-repair `
+  --canal nexon_ia `
+  --assets "$coleccionValidada" `
+  --visual-audit "$auditPath" `
+  --limite 0 `
+  --ronda-inicial 3 `
+  --intentos 1 `
+  --objetivos `
+    s09_c001 s09_c002 s09_c004 s09_c005 `
+    s10_c001 s11_c001 s11_c004 s11_c005 s12_c005
+
+No renderizar ni publicar hasta obtener Estado: APPROVED y 65 recursos aprobados.
