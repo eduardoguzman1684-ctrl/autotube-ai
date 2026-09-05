@@ -1248,6 +1248,9 @@ def generar_tarjeta_editorial(
     estilo: str,
 ) -> Image.Image:
     """Genera tarjetas factuales con geometrías perceptualmente distintas."""
+    if estilo == "proteina_3d_medicina":
+        return generar_tarjeta_molecular_3d(elemento)
+
     imagen = crear_fondo()
     dibujo = ImageDraw.Draw(imagen)
     titulo = str(elemento.get("segmento_titulo", "Nexo IA"))
@@ -1292,6 +1295,7 @@ def generar_tarjeta_editorial(
         "desafio_go_ia": 3,
         "centro_datos_ia_moderno": 4,
         "ia_empresa_contemporanea": 6,
+        "proteina_3d_medicina": 4,
         "regulacion_ia_internacional": 1,
         "ciberseguridad_privacidad": 5,
         "cognicion_artificial_agi": 2,
@@ -1416,6 +1420,152 @@ def generar_tarjeta_editorial(
         (ANCHO - 225, ALTO - 94),
         "NEXO IA · DOCUMENTAL",
         font=fuente_marca,
+        fill=FONDO_1,
+        anchor="mm",
+    )
+    return imagen
+
+
+def generar_tarjeta_molecular_3d(
+    elemento: dict[str, Any],
+) -> Image.Image:
+    """Dibuja una proteína 3D inequívoca dentro de una pantalla científica."""
+    imagen = crear_fondo()
+    dibujo = ImageDraw.Draw(imagen)
+    titulo = str(elemento.get("segmento_titulo", "Ciencia y medicina"))
+    principal = contenido_principal(elemento)
+    acento = CIAN
+
+    dibujar_encabezado(
+        dibujo,
+        titulo,
+        "Modelo molecular 3D · ciencia y medicina",
+        acento,
+    )
+
+    # Pantalla de laboratorio: el modelo molecular ocupa el foco principal.
+    pantalla = (90, 255, 1070, 920)
+    dibujo.rounded_rectangle(
+        pantalla,
+        radius=42,
+        fill=(8, 20, 37),
+        outline=acento,
+        width=7,
+    )
+    for x in range(150, 1030, 110):
+        dibujo.line((x, 330, x, 835), fill=(22, 52, 72), width=2)
+    for y in range(330, 870, 90):
+        dibujo.line((130, y, 1030, y), fill=(22, 52, 72), width=2)
+
+    puntos = [
+        (220, 600, 34, AZUL),
+        (300, 455, 25, CIAN),
+        (405, 555, 42, VERDE),
+        (500, 390, 28, AMARILLO),
+        (595, 520, 50, AZUL),
+        (700, 365, 31, ROJO),
+        (790, 515, 44, CIAN),
+        (905, 420, 27, VERDE),
+        (965, 600, 39, AMARILLO),
+        (845, 715, 48, AZUL),
+        (700, 650, 30, VERDE),
+        (565, 750, 43, ROJO),
+        (420, 695, 29, CIAN),
+        (285, 785, 37, AMARILLO),
+    ]
+    enlaces = [
+        (0, 1), (0, 2), (1, 2), (1, 3), (2, 4), (2, 12),
+        (3, 4), (3, 5), (4, 6), (4, 10), (5, 6), (5, 7),
+        (6, 7), (6, 8), (6, 9), (8, 9), (9, 10), (10, 11),
+        (10, 12), (11, 12), (12, 13),
+    ]
+    for primero, segundo in enlaces:
+        x1, y1, _, _ = puntos[primero]
+        x2, y2, _, _ = puntos[segundo]
+        dibujo.line((x1, y1, x2, y2), fill=(164, 224, 235), width=10)
+    for x, y, radio, color in puntos:
+        dibujo.ellipse(
+            (x - radio - 10, y - radio - 10, x + radio + 10, y + radio + 10),
+            fill=(18, 48, 66),
+        )
+        dibujo.ellipse(
+            (x - radio, y - radio, x + radio, y + radio),
+            fill=color,
+            outline=BLANCO,
+            width=4,
+        )
+        brillo = max(7, radio // 4)
+        dibujo.ellipse(
+            (x - radio // 2, y - radio // 2, x - radio // 2 + brillo, y - radio // 2 + brillo),
+            fill=BLANCO,
+        )
+
+    fuente_modelo = obtener_fuente(27, negrita=True)
+    dibujo.rounded_rectangle(
+        (150, 275, 545, 326),
+        radius=16,
+        fill=(24, 75, 94),
+    )
+    dibujo.text(
+        (347, 300),
+        "MODELO MOLECULAR 3D",
+        font=fuente_modelo,
+        fill=BLANCO,
+        anchor="mm",
+    )
+    fuente_dato = obtener_fuente(22)
+    dibujo.text(
+        (155, 875),
+        "PREDICCIÓN DE ESTRUCTURA DE PROTEÍNAS",
+        font=fuente_dato,
+        fill=CIAN,
+    )
+
+    # Panel editorial: vincula de forma explícita el modelo con la narración.
+    caja_texto = (1120, 280, 1830, 875)
+    dibujo.rounded_rectangle(
+        caja_texto,
+        radius=45,
+        fill=PANEL,
+        outline=VERDE,
+        width=6,
+    )
+    fuente_texto = obtener_fuente(64, negrita=True)
+    lineas = texto_ajustado(
+        dibujo,
+        principal,
+        fuente_texto,
+        570,
+        max_lineas=5,
+    )
+    altura_total = len(lineas) * 84
+    inicio_y = max(350, (caja_texto[1] + caja_texto[3] - altura_total) // 2)
+    dibujar_lineas_centradas(
+        dibujo,
+        lineas,
+        1475,
+        inicio_y,
+        fuente_texto,
+        BLANCO,
+        separacion=18,
+    )
+    fuente_pie = obtener_fuente(23, negrita=True)
+    dibujo.text(
+        (1475, 815),
+        "IA · PROTEÍNAS · NUEVOS FÁRMACOS",
+        font=fuente_pie,
+        fill=VERDE,
+        anchor="mm",
+    )
+    dibujo.rounded_rectangle(
+        (ANCHO - 360, ALTO - 120, ANCHO - 90, ALTO - 68),
+        radius=18,
+        fill=acento,
+    )
+    dibujo.text(
+        (ANCHO - 225, ALTO - 94),
+        "NEXO IA · DOCUMENTAL",
+        font=obtener_fuente(24, negrita=True),
         fill=FONDO_1,
         anchor="mm",
     )

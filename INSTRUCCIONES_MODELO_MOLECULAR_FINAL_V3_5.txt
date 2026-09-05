@@ -1,0 +1,50 @@
+AUTOTUBE AI - MODELO MOLECULAR FINAL V3.5
+============================================================
+
+OBJETIVO
+Resolver exclusivamente el ultimo rechazo visual s10_c003 sin
+alterar los otros 64 recursos ya aprobados.
+
+CAMBIOS
+- Añade un contrato factual exacto para s10_c003.
+- Sustituye el video generico de laboratorio por una tarjeta
+  documental local con un modelo molecular tridimensional visible.
+- Identifica de forma explicita la prediccion de estructuras de
+  proteinas, la inteligencia artificial y la busqueda de farmacos.
+- Mantiene el selector --objetivos incorporado en V3.4.
+- Mantiene la auditoria estricta completa de los 65 recursos.
+- No evita, relaja ni falsifica la aprobacion de Gemini.
+
+ARCHIVOS
+- pyproject.toml
+- src/autotube/visuals/local_asset_generator.py
+- src/autotube/visuals/visual_repair.py
+- tests/test_molecular_model_final_v3_5.py
+
+VERSION
+- AutoTube AI: 0.3.15
+- Reparacion visual: visual_repair_v3.9
+
+PRUEBA ESPECIFICA
+python -m unittest -v tests.test_molecular_model_final_v3_5
+
+PRUEBA COMPLETA
+python -m unittest discover -s tests -v
+
+EJECUCION FINAL
+autotube visual-repair `
+  --canal nexon_ia `
+  --assets "$coleccionValidada" `
+  --visual-audit "$auditPath" `
+  --limite 0 `
+  --ronda-inicial 3 `
+  --intentos 1 `
+  --objetivos s10_c003
+
+CONDICION DE RENDER
+No renderizar ni publicar hasta confirmar en el JSON final:
+- audited_assets: 65
+- approved_assets: 65
+- rejected_assets: 0
+- complete: true
+- status: approved

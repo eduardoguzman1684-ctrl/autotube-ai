@@ -16,7 +16,7 @@ from autotube.visuals.final_visual_auditor import (
 )
 
 
-REPAIR_VERSION = "visual_repair_v3.8"
+REPAIR_VERSION = "visual_repair_v3.9"
 
 
 FINAL_FACTUAL_CONTRACTS: dict[str, dict[str, Any]] = {
@@ -64,6 +64,19 @@ FINAL_FACTUAL_CONTRACTS: dict[str, dict[str, Any]] = {
             "tecnologías de inteligencia artificial en la empresa contemporánea."
         ),
         "style": "ia_empresa_contemporanea",
+    },
+    "s10_c003": {
+        "tokens": (
+            "modelos moleculares tridimensionales",
+            "estructura tridimensional de las proteinas",
+        ),
+        "screen": "Proteínas en 3D\nIA para ciencia y medicina",
+        "description": (
+            "Tarjeta documental animada que muestra claramente un modelo "
+            "molecular tridimensional de proteína en una pantalla científica "
+            "y explica su uso por la IA en ciencia y medicina."
+        ),
+        "style": "proteina_3d_medicina",
     },
     "s11_c001": {
         "tokens": ("panel de debate", "regulaciones tecnologicas"),
