@@ -32,6 +32,9 @@ CIAN = (56, 205, 220)
 VERDE = (61, 210, 151)
 AMARILLO = (245, 190, 70)
 ROJO = (239, 91, 109)
+BRONCE_OSCURO = (92, 61, 28)
+BRONCE = (167, 116, 51)
+BRONCE_CLARO = (220, 176, 91)
 
 
 def localizar_manifiesto_assets(
@@ -1250,6 +1253,8 @@ def generar_tarjeta_editorial(
     """Genera tarjetas factuales con geometrías perceptualmente distintas."""
     if estilo == "proteina_3d_medicina":
         return generar_tarjeta_molecular_3d(elemento)
+    if estilo == "placa_dartmouth_1956":
+        return generar_tarjeta_placa_dartmouth(elemento)
 
     imagen = crear_fondo()
     dibujo = ImageDraw.Draw(imagen)
@@ -1299,6 +1304,7 @@ def generar_tarjeta_editorial(
         "regulacion_ia_internacional": 1,
         "ciberseguridad_privacidad": 5,
         "cognicion_artificial_agi": 2,
+        "placa_dartmouth_1956": 6,
         "futuro_tecnologico_sostenible": 3,
     }
     variante = variantes.get(
@@ -1420,6 +1426,155 @@ def generar_tarjeta_editorial(
         (ANCHO - 225, ALTO - 94),
         "NEXO IA · DOCUMENTAL",
         font=fuente_marca,
+        fill=FONDO_1,
+        anchor="mm",
+    )
+    return imagen
+
+
+def generar_tarjeta_placa_dartmouth(
+    elemento: dict[str, Any],
+) -> Image.Image:
+    """Dibuja una placa conmemorativa inequívoca de Dartmouth 1956."""
+    imagen = crear_fondo()
+    dibujo = ImageDraw.Draw(imagen)
+    titulo = str(elemento.get("segmento_titulo", "El legado de 1956"))
+    principal = contenido_principal(elemento)
+
+    dibujar_encabezado(
+        dibujo,
+        titulo,
+        "Placa conmemorativa histórica · Dartmouth College",
+        BRONCE_CLARO,
+    )
+
+    # Muro de piedra y placa de bronce. Las grandes masas, tornillos y texto
+    # institucional hacen imposible confundirla con una fotografía genérica.
+    dibujo.rounded_rectangle(
+        (65, 245, 1265, 965),
+        radius=30,
+        fill=(69, 77, 84),
+        outline=(143, 151, 156),
+        width=8,
+    )
+    placa_exterior = (105, 280, 1225, 925)
+    placa_interior = (140, 315, 1190, 890)
+    dibujo.rounded_rectangle(
+        placa_exterior,
+        radius=24,
+        fill=BRONCE_OSCURO,
+        outline=BRONCE_CLARO,
+        width=7,
+    )
+    dibujo.rounded_rectangle(
+        placa_interior,
+        radius=16,
+        fill=BRONCE,
+        outline=(246, 211, 139),
+        width=4,
+    )
+
+    for x, y in ((175, 350), (1155, 350), (175, 855), (1155, 855)):
+        dibujo.ellipse(
+            (x - 17, y - 17, x + 17, y + 17),
+            fill=BRONCE_CLARO,
+            outline=BRONCE_OSCURO,
+            width=4,
+        )
+        dibujo.line((x - 8, y, x + 8, y), fill=BRONCE_OSCURO, width=3)
+
+    tinta = (37, 28, 18)
+    dibujo.text(
+        (665, 365),
+        "PLACA CONMEMORATIVA",
+        font=obtener_fuente(30, negrita=True),
+        fill=tinta,
+        anchor="mm",
+    )
+    dibujo.text(
+        (665, 435),
+        "DARTMOUTH COLLEGE",
+        font=obtener_fuente(56, negrita=True),
+        fill=tinta,
+        anchor="mm",
+    )
+    dibujo.line((285, 480, 1045, 480), fill=BRONCE_CLARO, width=5)
+    dibujo.text(
+        (665, 535),
+        "SUMMER RESEARCH PROJECT",
+        font=obtener_fuente(29, negrita=True),
+        fill=tinta,
+        anchor="mm",
+    )
+    dibujo.text(
+        (665, 585),
+        "ON ARTIFICIAL INTELLIGENCE",
+        font=obtener_fuente(34, negrita=True),
+        fill=tinta,
+        anchor="mm",
+    )
+    dibujo.text(
+        (665, 690),
+        "1956",
+        font=obtener_fuente(96, negrita=True),
+        fill=tinta,
+        anchor="mm",
+    )
+    dibujo.text(
+        (665, 775),
+        "JOHN McCARTHY · MARVIN MINSKY",
+        font=obtener_fuente(25, negrita=True),
+        fill=tinta,
+        anchor="mm",
+    )
+    dibujo.text(
+        (665, 820),
+        "CLAUDE SHANNON · DARTMOUTH, NEW HAMPSHIRE",
+        font=obtener_fuente(22),
+        fill=tinta,
+        anchor="mm",
+    )
+
+    caja_texto = (1310, 285, 1840, 895)
+    dibujo.rounded_rectangle(
+        caja_texto,
+        radius=40,
+        fill=PANEL,
+        outline=BRONCE_CLARO,
+        width=6,
+    )
+    lineas = texto_ajustado(
+        dibujo,
+        principal,
+        obtener_fuente(57, negrita=True),
+        410,
+        max_lineas=5,
+    )
+    dibujar_lineas_centradas(
+        dibujo,
+        lineas,
+        1575,
+        390,
+        obtener_fuente(57, negrita=True),
+        BLANCO,
+        separacion=18,
+    )
+    dibujo.text(
+        (1575, 795),
+        "LEGADO DE LA IA · 1956",
+        font=obtener_fuente(22, negrita=True),
+        fill=BRONCE_CLARO,
+        anchor="mm",
+    )
+    dibujo.rounded_rectangle(
+        (ANCHO - 360, ALTO - 120, ANCHO - 90, ALTO - 68),
+        radius=18,
+        fill=BRONCE_CLARO,
+    )
+    dibujo.text(
+        (ANCHO - 225, ALTO - 94),
+        "NEXO IA · DOCUMENTAL",
+        font=obtener_fuente(24, negrita=True),
         fill=FONDO_1,
         anchor="mm",
     )

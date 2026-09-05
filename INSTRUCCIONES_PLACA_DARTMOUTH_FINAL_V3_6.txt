@@ -1,0 +1,50 @@
+AUTOTUBE AI - PLACA DARTMOUTH FINAL V3.6
+============================================================
+
+OBJETIVO
+Resolver exclusivamente el ultimo rechazo visual s12_c001 sin
+alterar los otros 64 recursos ya aprobados.
+
+CAMBIOS
+- Añade un contrato factual exacto para s12_c001.
+- Sustituye la fotografia historica general por una tarjeta
+  documental local que representa una placa de bronce inequívoca.
+- Muestra de forma visible Dartmouth College, Artificial Intelligence,
+  1956 y los nombres de John McCarthy, Marvin Minsky y Claude Shannon.
+- Mantiene el selector --objetivos incorporado en V3.4.
+- Mantiene la auditoria estricta completa de los 65 recursos.
+- No evita, relaja ni falsifica la aprobacion de Gemini.
+
+ARCHIVOS
+- pyproject.toml
+- src/autotube/visuals/local_asset_generator.py
+- src/autotube/visuals/visual_repair.py
+- tests/test_dartmouth_plaque_final_v3_6.py
+
+VERSION
+- AutoTube AI: 0.3.16
+- Reparacion visual: visual_repair_v3.10
+
+PRUEBA ESPECIFICA
+python -m unittest -v tests.test_dartmouth_plaque_final_v3_6
+
+PRUEBA COMPLETA
+python -m unittest discover -s tests -v
+
+EJECUCION FINAL
+autotube visual-repair `
+  --canal nexon_ia `
+  --assets "$coleccionValidada" `
+  --visual-audit "$auditPath" `
+  --limite 0 `
+  --ronda-inicial 3 `
+  --intentos 1 `
+  --objetivos s12_c001
+
+CONDICION DE RENDER
+No renderizar ni publicar hasta confirmar en el JSON final:
+- audited_assets: 65
+- approved_assets: 65
+- rejected_assets: 0
+- complete: true
+- status: approved

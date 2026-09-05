@@ -16,7 +16,7 @@ from autotube.visuals.final_visual_auditor import (
 )
 
 
-REPAIR_VERSION = "visual_repair_v3.9"
+REPAIR_VERSION = "visual_repair_v3.10"
 
 
 FINAL_FACTUAL_CONTRACTS: dict[str, dict[str, Any]] = {
@@ -104,6 +104,20 @@ FINAL_FACTUAL_CONTRACTS: dict[str, dict[str, Any]] = {
             "cognitiva y los intentos de comprender y simular la mente."
         ),
         "style": "cognicion_artificial_agi",
+    },
+    "s12_c001": {
+        "tokens": (
+            "placa conmemorativa historica",
+            "campus de dartmouth college",
+            "conferencia de 1956",
+        ),
+        "screen": "El legado de Dartmouth\nPlaca conmemorativa · 1956",
+        "description": (
+            "Tarjeta documental animada que representa de forma inequívoca "
+            "una placa conmemorativa de Dartmouth College dedicada al proyecto "
+            "de investigación sobre inteligencia artificial de 1956."
+        ),
+        "style": "placa_dartmouth_1956",
     },
     "s12_c005": {
         "tokens": ("futuro tecnologico sostenible", "comunidad diversa"),
